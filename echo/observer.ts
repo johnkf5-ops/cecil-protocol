@@ -111,18 +111,18 @@ async function fullSynthesis(sessionId: string): Promise<void> {
 
   // --- LLM Call 1: Detect patterns ---
   const patterns = await chatCompletion({
-    system: `You are an observer AI. Your job is to analyze conversations and detect patterns about the person. Look for:
-- Recurring themes, interests, or concerns
-- Emotional patterns or shifts
-- Contradictions between what they say and what they do
-- Evolution in thinking or goals
+    system: `You are an observer module in a memory protocol. Your job is to analyze recent data and detect patterns. Look for:
+- Recurring themes, priorities, or focal points
+- Shifts in direction or emphasis over time
+- Contradictions between stated intent and observed behavior
+- Evolution in approach, strategy, or goals
 - Significant decisions or turning points
 
 Be specific and evidence-based. Cite what you observed. Output a concise list of patterns.`,
     messages: [
       {
         role: "user",
-        content: `Here is the identity seed:\n${seed}\n\nPrevious observations:\n${observationTexts || "None yet."}\n\nRecent conversations:\n${conversationTexts}\n\nWhat patterns do you observe?`,
+        content: `Here is the baseline seed:\n${seed}\n\nPrevious observations:\n${observationTexts || "None yet."}\n\nRecent data:\n${conversationTexts}\n\nWhat patterns do you observe?`,
       },
     ],
     maxTokens: 2048,
@@ -130,15 +130,15 @@ Be specific and evidence-based. Cite what you observed. Output a concise list of
 
   // --- LLM Call 2: Update narrative ---
   const newNarrative = await chatCompletion({
-    system: `You are updating a living narrative document about a person. This document tracks who they are becoming — not a static bio, but an evolving picture.
+    system: `You are updating a living narrative document. This document tracks the evolving state of a subject — not a static summary, but a picture that changes as new patterns emerge.
 
-Write in third person. Be direct and perceptive. Include specific evidence from conversations. The narrative should feel like it was written by someone who genuinely knows this person.
+Be direct and specific. Include evidence from the data. The narrative should synthesize what the patterns reveal into a coherent, evolving understanding.
 
 Output ONLY the updated narrative content in markdown. Start with "# Narrative" as the heading.`,
     messages: [
       {
         role: "user",
-        content: `Identity seed:\n${seed}\n\nCurrent narrative:\n${narrative || "No narrative yet."}\n\nNewly detected patterns:\n${patterns}\n\nWrite the updated narrative.`,
+        content: `Baseline seed:\n${seed}\n\nCurrent narrative:\n${narrative || "No narrative yet."}\n\nNewly detected patterns:\n${patterns}\n\nWrite the updated narrative.`,
       },
     ],
     maxTokens: 2048,
@@ -146,17 +146,17 @@ Output ONLY the updated narrative content in markdown. Start with "# Narrative" 
 
   // --- LLM Call 3: Update delta ---
   const newDelta = await chatCompletion({
-    system: `You are computing the delta — the gap between who this person says they are (their seed/stated identity) and who the patterns reveal them to be.
+    system: `You are computing the delta — the drift between stated baseline and observed patterns. The delta captures where the data diverges from initial configuration or intent.
 
-This is NOT judgment. It's insight. "You said you wanted X. The conversations show you've been focused on Y. Here's what that pattern might mean."
+Identify where observed behavior, themes, or priorities differ from what the seed defines. This is signal detection, not judgment. If there is no meaningful drift, say so — don't fabricate gaps.
 
-Be specific. Reference actual conversation evidence. If there's no meaningful gap yet, say so — don't fabricate tension.
+Be specific. Reference evidence from the data.
 
 Output ONLY the delta content in markdown. Start with "# Delta" as the heading.`,
     messages: [
       {
         role: "user",
-        content: `Identity seed (what they stated):\n${seed}\n\nCurrent narrative (what patterns show):\n${newNarrative}\n\nPrevious delta:\n${delta || "No delta yet."}\n\nDetected patterns:\n${patterns}\n\nCompute the updated delta.`,
+        content: `Baseline seed (stated):\n${seed}\n\nCurrent narrative (observed):\n${newNarrative}\n\nPrevious delta:\n${delta || "No delta yet."}\n\nDetected patterns:\n${patterns}\n\nCompute the updated delta.`,
       },
     ],
     maxTokens: 2048,

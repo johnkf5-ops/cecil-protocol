@@ -52,22 +52,21 @@ export async function synthesizePodcasts(): Promise<{
   // --- LLM Call 1: Detect patterns across podcast content ---
   console.log("  [1/3] Detecting patterns...");
   const patterns = await chatCompletion({
-    system: `You are an observer AI analyzing podcast transcripts from a person's own podcast. These are long-form, unfiltered conversations that reveal how they think, what they believe, their recurring themes, and their personality.
+    system: `You are an observer module analyzing ingested content (podcast transcripts). These are long-form, unfiltered conversations rich with signal.
 
 Analyze the content and detect:
-- Core beliefs and worldview (what do they keep coming back to?)
-- Communication style (how do they talk, argue, explain?)
-- Recurring themes, interests, and obsessions
-- Emotional patterns and what they get passionate about
-- Contradictions or tensions in their thinking
-- Key stories, references, or examples they use repeatedly
-- Relationships and how they talk about people
+- Core themes and priorities (what keeps coming up?)
+- Communication patterns (how are ideas expressed, argued, explained?)
+- Recurring references, examples, or frameworks
+- Contradictions or tensions within the content
+- Evolution of thinking across different sessions
+- Key relationships, influences, or dynamics
 
 Be specific. Cite evidence from the transcripts. Output a structured list of patterns.`,
     messages: [
       {
         role: "user",
-        content: `Here is the person's identity seed:\n${seed}\n\nHere are excerpts from their podcast transcripts:\n${podcastContent}\n\nWhat patterns do you observe?`,
+        content: `Here is the baseline seed:\n${seed}\n\nHere are excerpts from ingested transcripts:\n${podcastContent}\n\nWhat patterns do you observe?`,
       },
     ],
     maxTokens: 3000,
@@ -76,15 +75,15 @@ Be specific. Cite evidence from the transcripts. Output a structured list of pat
   // --- LLM Call 2: Update narrative with podcast insights ---
   console.log("  [2/3] Updating narrative...");
   const newNarrative = await chatCompletion({
-    system: `You are updating a living narrative document about a person. You now have access to their podcast transcripts — hours of unfiltered conversation that reveal who they really are, beyond what they'd write in a profile.
+    system: `You are updating a living narrative document. You now have access to ingested content (transcripts) that provides deeper signal than the initial seed.
 
-Integrate the podcast insights into the existing narrative. The podcast content should deepen the picture, not replace it. Write in third person. Be direct and perceptive.
+Integrate the new patterns into the existing narrative. The ingested content should deepen the understanding, not replace it. Be direct and specific.
 
 Output ONLY the updated narrative content in markdown. Start with "# Narrative" as the heading.`,
     messages: [
       {
         role: "user",
-        content: `Identity seed:\n${seed}\n\nCurrent narrative:\n${narrative || "No narrative yet."}\n\nPatterns detected from podcast analysis:\n${patterns}\n\nWrite the updated narrative incorporating podcast insights.`,
+        content: `Baseline seed:\n${seed}\n\nCurrent narrative:\n${narrative || "No narrative yet."}\n\nPatterns detected from ingested content:\n${patterns}\n\nWrite the updated narrative incorporating these insights.`,
       },
     ],
     maxTokens: 3000,
@@ -93,21 +92,21 @@ Output ONLY the updated narrative content in markdown. Start with "# Narrative" 
   // --- LLM Call 3: Update delta with podcast insights ---
   console.log("  [3/3] Updating delta...");
   const newDelta = await chatCompletion({
-    system: `You are computing the delta — the gap between who this person says they are and who they reveal themselves to be on their podcast. Podcast conversations are unfiltered — people say things they'd never write in a bio.
+    system: `You are computing the delta — the drift between the stated baseline and what the ingested content reveals. Ingested content is raw and unfiltered, often containing signal that the seed doesn't capture.
 
-Compare the seed (stated identity) with what the podcast reveals. Look for:
-- Things they're passionate about that they didn't mention in onboarding
-- Beliefs or values that surface repeatedly in conversation but aren't in their stated identity
-- Contradictions between how they present themselves and how they actually talk
-- Hidden interests, concerns, or personality traits
+Compare the seed with what the ingested patterns reveal. Look for:
+- Priorities or themes that appear in the data but not in the seed
+- Contradictions between stated intent and observed patterns
+- Nuances, complexities, or tensions the seed oversimplifies
+- Emergent themes the baseline didn't anticipate
 
-Be specific. If there's no meaningful gap, say so.
+Be specific. If there's no meaningful drift, say so — don't fabricate gaps.
 
 Output ONLY the delta content in markdown. Start with "# Delta" as the heading.`,
     messages: [
       {
         role: "user",
-        content: `Identity seed (what they stated):\n${seed}\n\nUpdated narrative:\n${newNarrative}\n\nPrevious delta:\n${delta || "No delta yet."}\n\nPodcast patterns:\n${patterns}\n\nCompute the updated delta.`,
+        content: `Baseline seed (stated):\n${seed}\n\nUpdated narrative:\n${newNarrative}\n\nPrevious delta:\n${delta || "No delta yet."}\n\nIngested content patterns:\n${patterns}\n\nCompute the updated delta.`,
       },
     ],
     maxTokens: 3000,
