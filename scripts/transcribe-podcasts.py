@@ -22,7 +22,7 @@ import feedparser
 import requests
 from faster_whisper import WhisperModel
 
-RSS_URL = "https://api.riverside.fm/hosting/IFGvHO3g.rss"
+RSS_URL = "YOUR_RSS_FEED_URL"  # Replace with your podcast RSS feed URL
 BASE_DIR = Path(__file__).resolve().parent.parent
 PODCAST_DIR = BASE_DIR / "podcasts"
 TRANSCRIPT_DIR = PODCAST_DIR / "transcripts"
