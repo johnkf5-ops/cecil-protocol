@@ -6,6 +6,46 @@ Cecil is an open source memory and identity protocol for AI. Not an app — infr
 
 Every AI currently forgets you the moment you close the tab. Not because the models aren't powerful enough — because there's no persistent self underneath them. Cecil fixes that.
 
+```mermaid
+flowchart TB
+    subgraph CONVERSATION["During Conversation"]
+        Q["User Query"] --> MA["Meta Agent"]
+        MA --> IW["Assembles Identity Window\n20-50k tokens of signal"]
+        IW --> LLM["Any LLM"]
+        LLM --> R["Response"]
+    end
+
+    subgraph MEMORY["Memory Store (Qdrant)"]
+        VEC["Vector Embeddings\nSemantic Search"]
+        MD["Markdown Mirror\nHuman-Readable"]
+    end
+
+    subgraph IDENTITY["Identity"]
+        SEED["seed.md\nBaseline (immutable)"]
+        NAR["narrative.md\nEvolving patterns"]
+        DEL["delta.md\nDrift detection"]
+    end
+
+    subgraph OBSERVER["After Session — Observer"]
+        LP["Light Pass\nEmbed conversation\n(0 LLM calls)"]
+        FS["Full Synthesis\nDetect patterns → Update narrative → Compute delta\n(3 LLM calls every N sessions)"]
+    end
+
+    MA -. retrieves .-> VEC
+    MA -. reads .-> IDENTITY
+    R --> LP
+    LP --> VEC
+    LP --> MD
+    FS --> NAR
+    FS --> DEL
+    FS -. reads .-> VEC
+
+    style CONVERSATION fill:#1a1a2e,stroke:#4a4a8a,color:#fff
+    style MEMORY fill:#16213e,stroke:#4a4a8a,color:#fff
+    style IDENTITY fill:#0f3460,stroke:#4a4a8a,color:#fff
+    style OBSERVER fill:#1a1a2e,stroke:#4a4a8a,color:#fff
+```
+
 ---
 
 ## What Makes This Different
