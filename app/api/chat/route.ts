@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chat } from "@/echo/meta";
-import type { Message } from "@/echo/types";
+import { chat } from "@/cecil/meta";
+import type { Message } from "@/cecil/types";
 
 export async function POST(req: NextRequest) {
   const { messages }: { messages: Message[] } = await req.json();

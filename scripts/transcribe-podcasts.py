@@ -1,5 +1,5 @@
 """
-Podcast Transcription Pipeline for Echo Protocol
+Podcast Transcription Pipeline for Cecil Protocol
 Downloads episodes from RSS feed, transcribes with faster-whisper (CUDA).
 Output: JSON transcripts with timestamps per segment.
 
@@ -202,7 +202,7 @@ def main():
     print(f"Episodes transcribed: {len(episodes)}")
     print(f"Total time: {total_elapsed / 60:.1f} minutes")
     print(f"Transcripts saved to: {TRANSCRIPT_DIR}")
-    print(f"\nNext step: Run the ingest API to embed transcripts into Echo memory")
+    print(f"\nNext step: Run the ingest API to embed transcripts into Cecil memory")
     print(f"  curl -X POST http://localhost:3000/api/ingest-podcasts")
 
 

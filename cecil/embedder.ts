@@ -3,7 +3,7 @@ import { EmbeddingModel, FlagEmbedding } from "fastembed";
 import { v4 as uuidv4 } from "uuid";
 import type { MemoryMetadata } from "./types";
 
-const COLLECTION_NAME = "echo_memory";
+const COLLECTION_NAME = "cecil_memory";
 const VECTOR_SIZE = 384;
 
 let embeddingModel: FlagEmbedding | null = null;

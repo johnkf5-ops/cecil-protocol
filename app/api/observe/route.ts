@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { observe } from "@/echo/observer";
-import type { Message } from "@/echo/types";
+import { observe } from "@/cecil/observer";
+import type { Message } from "@/cecil/types";
 
 export async function POST(req: NextRequest) {
   const { messages, sessionId }: { messages: Message[]; sessionId: string } =

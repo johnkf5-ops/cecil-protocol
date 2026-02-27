@@ -1,5 +1,5 @@
 export interface OnboardingQuestion {
-  id: keyof import("@/echo/types").OnboardingAnswers;
+  id: keyof import("@/cecil/types").OnboardingAnswers;
   question: string;
   placeholder: string;
 }

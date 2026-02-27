@@ -1,10 +1,10 @@
-# Echo
+# Cecil
 
 **Give AI a self.**
 
-Echo is an open source memory and identity protocol for AI. Not an app — infrastructure. The foundational layer that gives any AI model persistent memory, pattern recognition, and a continuous sense of context over time.
+Cecil is an open source memory and identity protocol for AI. Not an app — infrastructure. The foundational layer that gives any AI model persistent memory, pattern recognition, and a continuous sense of context over time.
 
-Every AI currently forgets you the moment you close the tab. Not because the models aren't powerful enough — because there's no persistent self underneath them. Echo fixes that.
+Every AI currently forgets you the moment you close the tab. Not because the models aren't powerful enough — because there's no persistent self underneath them. Cecil fixes that.
 
 ---
 
@@ -12,7 +12,7 @@ Every AI currently forgets you the moment you close the tab. Not because the mod
 
 Most AI memory solutions stuff everything into a context window. That creates noise, not memory. The model gets lost, reasoning degrades, hallucinations increase.
 
-Echo distributes memory across three layers:
+Cecil distributes memory across three layers:
 
 1. **Memory Store** — Qdrant vector database running locally. Every conversation, observation, and data point gets embedded and stored. Retrieval is semantic, not keyword-based. Fast and free — no LLM calls.
 
@@ -26,17 +26,17 @@ The result: an AI that doesn't just remember what you said — it understands ho
 
 ## It Evolves
 
-Echo isn't static memory. It's a feedback loop.
+Cecil isn't static memory. It's a feedback loop.
 
 The observer doesn't just store data — it watches for **drift**. Every few sessions, it compares what was configured (the seed) against what it's actually seeing (the patterns). The delta between those two is where the insight lives.
 
-This works the same way whether Echo is observing a person, an agent, or itself.
+This works the same way whether Cecil is observing a person, an agent, or itself.
 
 - The **seed** is the initial configuration — what the subject was set up to be.
 - The **narrative** is the evolving understanding — what the patterns actually show.
 - The **delta** is the drift — where reality diverges from intent.
 
-If Echo is powering an agent, and that agent starts behaving differently than configured — responding differently, prioritizing different things, drifting from its original purpose — the observer catches it. The narrative updates. The delta surfaces the gap. The agent can then use that self-awareness to correct course or lean into the evolution.
+If Cecil is powering an agent, and that agent starts behaving differently than configured — responding differently, prioritizing different things, drifting from its original purpose — the observer catches it. The narrative updates. The delta surfaces the gap. The agent can then use that self-awareness to correct course or lean into the evolution.
 
 This is what makes it alive in a meaningful sense. It's not just remembering — it's noticing its own patterns, detecting its own drift, and building an evolving model of what it's becoming. The observer doesn't care if it's watching a human or watching itself. It just looks for the gap between baseline and reality.
 
@@ -46,9 +46,9 @@ This is what makes it alive in a meaningful sense. It's not just remembering —
 
 The onboarding flow asks 5 seed questions to get started. That's the cold start. It works, but it's shallow.
 
-The real power is feeding Echo raw content and letting the observer synthesize it:
+The real power is feeding Cecil raw content and letting the observer synthesize it:
 
-- **Podcasts** — 44 hours of unfiltered conversation transcribed and embedded. Echo learns how you argue, what you believe, your recurring themes, your contradictions. Richer than any profile page.
+- **Podcasts** — 44 hours of unfiltered conversation transcribed and embedded. Cecil learns how you argue, what you believe, your recurring themes, your contradictions. Richer than any profile page.
 - **Blog posts, journal entries, writing** — Feed it your words, it learns your voice.
 - **Code repositories** — Feed it your codebase, it learns your architecture, patterns, and failure modes.
 - **Chat history** — Feed it Slack, Discord, or support logs. It learns group dynamics, communication patterns, escalation triggers.
@@ -62,11 +62,11 @@ The included podcast pipeline (`scripts/transcribe-podcasts.py`) is one example.
 
 ## Use Cases
 
-Echo is not just a "get to know you" tool. The memory + observation + synthesis loop is a general-purpose pattern:
+Cecil is not just a "get to know you" tool. The memory + observation + synthesis loop is a general-purpose pattern:
 
 - **Personal AI** — An AI that actually knows you. References things you said months ago. Notices when you contradict yourself. Evolves its understanding as you do.
 - **Agent memory** — Give any AI agent persistent context. A Discord bot that remembers every conversation. A coding assistant that learns your codebase over time.
-- **Team of agents** — Spin up multiple Echo instances with different memory pools. Each one observes different data, develops different expertise, maintains its own identity.
+- **Team of agents** — Spin up multiple Cecil instances with different memory pools. Each one observes different data, develops different expertise, maintains its own identity.
 - **Moderation** — Feed it channel history. It learns community dynamics, detects pattern shifts, understands context that keyword filters miss.
 - **Autonomous workflows** — An agent that runs recursive tasks and learns from each iteration. It doesn't just execute — it observes what worked, what failed, and adapts.
 
@@ -108,8 +108,8 @@ Identity lives in three files:
 
 ```bash
 # Clone
-git clone https://github.com/johnkf5-ops/echo-protocol.git
-cd echo-protocol
+git clone https://github.com/johnkf5-ops/cecil-protocol.git
+cd cecil-protocol
 
 # Start Qdrant
 docker compose up -d
@@ -129,7 +129,7 @@ Open `http://localhost:3000` — complete the onboarding, then start chatting.
 
 ### Feed It Content (Optional)
 
-The onboarding gives you a seed. To go deeper, feed Echo real content:
+The onboarding gives you a seed. To go deeper, feed Cecil real content:
 
 ```bash
 # Example: Podcast transcription pipeline
@@ -138,15 +138,15 @@ pip install faster-whisper requests feedparser
 # Edit scripts/transcribe-podcasts.py — set your RSS feed URL
 python scripts/transcribe-podcasts.py
 
-# Ingest transcripts into Echo
+# Ingest transcripts into Cecil
 curl -X POST http://localhost:3000/api/ingest-podcasts
 ```
 
 Build your own ingestion pipelines for any content source. The pattern:
 1. Get your content into text
 2. Chunk it into meaningful segments
-3. Use `embedBatch()` from `echo/embedder.ts` to store in Qdrant
-4. Run synthesis via `echo/podcast-observer.ts` pattern to extract insights
+3. Use `embedBatch()` from `cecil/embedder.ts` to store in Qdrant
+4. Run synthesis via `cecil/podcast-observer.ts` pattern to extract insights
 
 ### Customizing Onboarding
 
@@ -168,7 +168,7 @@ The default onboarding asks 5 seed questions. You can customize these in `onboar
 ## Project Structure
 
 ```
-echo/
+cecil/
   types.ts              — Shared types (MemoryType, SearchResult, etc.)
   embedder.ts           — FastEmbed + Qdrant writes
   retriever.ts          — Semantic search against Qdrant
@@ -205,7 +205,7 @@ memory/                 — Human-readable memory mirror (gitignored)
 3. **Markdown mirror.** Every memory has a human-readable version. Inspect, edit, delete.
 4. **Observer is post-session.** No LLM calls during conversation. Memory ops happen after.
 5. **Compression over accumulation.** The identity window is 20-50k tokens of signal, not your entire history.
-6. **The protocol is the product.** Echo is infrastructure, not an app. Plug it into anything.
+6. **The protocol is the product.** Cecil is infrastructure, not an app. Plug it into anything.
 
 ---
 

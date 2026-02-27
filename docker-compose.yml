@@ -1,7 +1,7 @@
 services:
   qdrant:
     image: qdrant/qdrant:latest
-    container_name: echo-qdrant
+    container_name: cecil-qdrant
     restart: unless-stopped
     ports:
       - "6333:6333"

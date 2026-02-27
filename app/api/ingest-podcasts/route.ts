@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ingestAllPodcasts } from "@/echo/podcast-ingest";
-import { synthesizePodcasts } from "@/echo/podcast-observer";
+import { ingestAllPodcasts } from "@/cecil/podcast-ingest";
+import { synthesizePodcasts } from "@/cecil/podcast-observer";
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));

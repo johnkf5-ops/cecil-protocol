@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { ONBOARDING_QUESTIONS } from "@/onboarding/questions";
-import type { Message, OnboardingAnswers } from "@/echo/types";
+import type { Message, OnboardingAnswers } from "@/cecil/types";
 
 type AppState = "loading" | "onboarding" | "chat";
 
@@ -149,7 +149,7 @@ export default function Home() {
         <div className="w-full max-w-lg">
           <div className="mb-10">
             <p className="text-zinc-600 text-xs mb-2 font-mono">
-              echo — {onboardStep + 1} / {ONBOARDING_QUESTIONS.length}
+              cecil — {onboardStep + 1} / {ONBOARDING_QUESTIONS.length}
             </p>
             <div className="w-full h-px bg-zinc-800">
               <div
@@ -191,7 +191,7 @@ export default function Home() {
     <div className="flex min-h-screen flex-col bg-black">
       {/* Header */}
       <div className="border-b border-zinc-900 px-6 py-4 flex items-center justify-between">
-        <span className="text-zinc-400 text-sm font-mono">echo</span>
+        <span className="text-zinc-400 text-sm font-mono">cecil</span>
         <button
           onClick={handleEndSession}
           disabled={messages.length === 0 || isReflecting}
@@ -205,7 +205,7 @@ export default function Home() {
       <div className="flex-1 overflow-y-auto px-6 py-8 max-w-3xl mx-auto w-full">
         {messages.length === 0 && (
           <p className="text-zinc-700 text-sm text-center mt-16">
-            Start talking. Echo remembers.
+            Start talking. Cecil remembers.
           </p>
         )}
 

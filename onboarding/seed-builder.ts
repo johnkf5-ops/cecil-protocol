@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
-import { embed, embedBatch, initCollection } from "@/echo/embedder";
-import type { OnboardingAnswers } from "@/echo/types";
+import { embed, embedBatch, initCollection } from "@/cecil/embedder";
+import type { OnboardingAnswers } from "@/cecil/types";
 
 const IDENTITY_DIR = path.join(process.cwd(), "identity");
 const SEED_PATH = path.join(IDENTITY_DIR, "seed.md");

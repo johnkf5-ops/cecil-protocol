@@ -1,6 +1,6 @@
 # Memory
 
-This directory is the human-readable mirror of Echo's vector database. Every memory stored in Qdrant also exists here as markdown for inspection, editing, and deletion.
+This directory is the human-readable mirror of Cecil's vector database. Every memory stored in Qdrant also exists here as markdown for inspection, editing, and deletion.
 
 ```
 memory/

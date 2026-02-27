@@ -39,7 +39,7 @@ async function saveSessionCounter(counter: SessionCounter): Promise<void> {
  */
 function formatConversationLog(messages: Message[], sessionId: string): string {
   const lines = messages.map(
-    (m) => `**${m.role === "user" ? "User" : "Echo"}:** ${m.content}`
+    (m) => `**${m.role === "user" ? "User" : "Cecil"}:** ${m.content}`
   );
   return `# Session ${sessionId}\n\n${lines.join("\n\n")}\n`;
 }
