@@ -20,7 +20,25 @@ Echo distributes memory across three layers:
 
 3. **Meta Agent** — Assembles a distilled identity window before every conversation. 20-50k tokens of signal, not noise. The AI doesn't get your entire history — it gets the compressed understanding of who you are and what matters right now.
 
-The result: an AI that doesn't just remember what you said — it understands how you think.
+The result: an AI that doesn't just remember what you said — it understands how you think. And it evolves.
+
+---
+
+## It Evolves
+
+Echo isn't static memory. It's a feedback loop.
+
+The observer doesn't just store data — it watches for **drift**. Every few sessions, it compares what was configured (the seed) against what it's actually seeing (the patterns). The delta between those two is where the insight lives.
+
+This works the same way whether Echo is observing a person, an agent, or itself.
+
+- The **seed** is the initial configuration — what the subject was set up to be.
+- The **narrative** is the evolving understanding — what the patterns actually show.
+- The **delta** is the drift — where reality diverges from intent.
+
+If Echo is powering an agent, and that agent starts behaving differently than configured — responding differently, prioritizing different things, drifting from its original purpose — the observer catches it. The narrative updates. The delta surfaces the gap. The agent can then use that self-awareness to correct course or lean into the evolution.
+
+This is what makes it alive in a meaningful sense. It's not just remembering — it's noticing its own patterns, detecting its own drift, and building an evolving model of what it's becoming. The observer doesn't care if it's watching a human or watching itself. It just looks for the gap between baseline and reality.
 
 ---
 
@@ -72,9 +90,9 @@ All memory is dual-stored:
 - **Human-readable markdown** in `/memory/` (inspectable, editable, deletable)
 
 Identity lives in three files:
-- `identity/seed.md` — Onboarding baseline (immutable)
-- `identity/narrative.md` — Who you're becoming (updated by observer)
-- `identity/delta.md` — The gap between stated and revealed (updated by observer)
+- `identity/seed.md` — Baseline configuration (immutable once set)
+- `identity/narrative.md` — Evolving understanding based on observed patterns (updated by observer)
+- `identity/delta.md` — Drift between baseline and reality (updated by observer)
 
 ---
 
