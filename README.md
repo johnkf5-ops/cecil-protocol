@@ -209,6 +209,14 @@ memory/                 — Human-readable memory mirror (gitignored)
 
 ---
 
+## Disclaimer
+
+Cecil is provided as-is with no warranty of any kind. This is experimental, open source infrastructure — not a hosted product. You are solely responsible for how you use it, what data you feed it, and what you do with the output. The authors and contributors are not liable for any damages, data loss, or unintended behavior arising from the use of this software. Use at your own risk.
+
+---
+
 ## License
 
-MIT
+Apache 2.0 — see [LICENSE](LICENSE) for full text.
+
+Copyright 2026 Crash Override LLC
