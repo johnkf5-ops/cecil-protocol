@@ -1,10 +1,13 @@
-export type MemoryType = "conversation" | "observation" | "milestone" | "seed" | "podcast";
+export type MemoryType = "conversation" | "observation" | "milestone" | "seed" | "podcast" | "fact";
 
 export interface MemoryMetadata {
   type: MemoryType;
   timestamp: string;
   sessionId?: string;
   sourcePath?: string;
+  sourceEpisode?: string;
+  entities?: string[];
+  category?: string;
 }
 
 export interface SearchResult {

@@ -47,6 +47,16 @@ export async function initCollection(): Promise<void> {
       field_schema: "keyword",
     });
   }
+
+  // Ensure sourceEpisode index exists (idempotent — safe on existing collection)
+  try {
+    await client.createPayloadIndex(COLLECTION_NAME, {
+      field_name: "sourceEpisode",
+      field_schema: "keyword",
+    });
+  } catch {
+    // Index already exists — ignore
+  }
 }
 
 async function embedText(text: string): Promise<number[]> {

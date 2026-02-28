@@ -49,9 +49,17 @@ yarn-error.log*
 /memory/conversations/
 /memory/observations/
 /memory/podcasts/
+/memory/interviews/
+/memory/facts/
 /memory/milestones/
 /memory/.session-counter.json
 /podcasts/
+
+# discord bot personality files (copied from openclaw)
+/discord/personality/
+
+# claude code project data
+/.claude/
 
 # vercel
 .vercel

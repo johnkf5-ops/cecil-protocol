@@ -1,4 +1,4 @@
-# Cecil
+# Cecil v1.1
 
 **Give AI a self.**
 
@@ -12,11 +12,16 @@ flowchart TB
         Q["User Query"] --> MA["Meta Agent"]
         MA --> IW["Assembles Identity Window\n20-50k tokens of signal"]
         IW --> LLM["Any LLM"]
-        LLM --> R["Response"]
+        LLM --> CHECK{"Needs more\ninfo?"}
+        CHECK -- No --> R["Response"]
+        CHECK -- "Yes: [SEARCH: ...]" --> DS["Deep Search\nTargeted Qdrant query\nacross all memory types"]
+        DS --> LLM2["Second LLM Call\nwith search results"]
+        LLM2 --> R
     end
 
     subgraph MEMORY["Memory Store (Qdrant)"]
         VEC["Vector Embeddings\nSemantic Search"]
+        FACTS["Fact Vectors\nExtracted claims & entities"]
         MD["Markdown Mirror\nHuman-Readable"]
     end
 
@@ -32,6 +37,8 @@ flowchart TB
     end
 
     MA -. retrieves .-> VEC
+    DS -. searches .-> VEC
+    DS -. searches .-> FACTS
     MA -. reads .-> IDENTITY
     R --> LP
     LP --> VEC
@@ -52,15 +59,17 @@ flowchart TB
 
 Most AI memory solutions stuff everything into a context window. That creates noise, not memory. The model gets lost, reasoning degrades, hallucinations increase.
 
-Cecil distributes memory across three layers:
+Cecil distributes memory across four layers:
 
 1. **Memory Store** — Qdrant vector database running locally. Every conversation, observation, and data point gets embedded and stored. Retrieval is semantic, not keyword-based. Fast and free — no LLM calls.
 
-2. **Observer** — Runs after sessions. Detects patterns, contradictions, and evolution over time. Compresses raw memory into insight. Light pass every session (zero LLM calls), full synthesis every 3-5 sessions (3 LLM calls).
+2. **Observer** — Runs after sessions. Detects patterns, contradictions, and evolution over time. Compresses raw memory into insight. Light pass every session (zero LLM calls), full synthesis every N sessions (3 LLM calls).
 
 3. **Meta Agent** — Assembles a distilled identity window before every conversation. 20-50k tokens of signal, not noise. The AI doesn't get your entire history — it gets the compressed understanding of who you are and what matters right now.
 
-The result: an AI that doesn't just remember what you said — it understands how you think. And it evolves.
+4. **Deep Search** *(new in v1.1)* — Active retrieval loop. When the AI doesn't know the answer, it can trigger a targeted search across all memory types — facts, podcasts, observations — and respond with sourced information instead of guessing. No function calling required. Works with any LLM via a marker-based system.
+
+The result: an AI that doesn't just remember what you said — it understands how you think, can look things up when it needs to, and evolves.
 
 ---
 
@@ -79,6 +88,45 @@ This works the same way whether Cecil is observing a person, an agent, or itself
 If Cecil is powering an agent, and that agent starts behaving differently than configured — responding differently, prioritizing different things, drifting from its original purpose — the observer catches it. The narrative updates. The delta surfaces the gap. The agent can then use that self-awareness to correct course or lean into the evolution.
 
 This is what makes it alive in a meaningful sense. It's not just remembering — it's noticing its own patterns, detecting its own drift, and building an evolving model of what it's becoming. The observer doesn't care if it's watching a human or watching itself. It just looks for the gap between baseline and reality.
+
+---
+
+## Deep Search (v1.1)
+
+In v1.0, Cecil could only use what was automatically retrieved into its context window before responding. If the right memory didn't surface, it would guess — or worse, confidently say something wrong.
+
+Deep search fixes this. When Cecil encounters a factual question it can't answer from its current context, it triggers an active search:
+
+1. The LLM outputs a `[SEARCH: keyword query]` marker instead of guessing
+2. The bot intercepts the marker and runs a targeted Qdrant search across all memory types (facts, podcasts, observations) with generous limits
+3. Search results are injected into a second prompt
+4. The LLM responds with sourced, accurate information
+
+This works with **any LLM** — no function calling required. The marker-based system uses standard text output that any model can produce.
+
+Deep search is toggleable at runtime. In the Discord bot, use `!deepsearch` to toggle it on/off. When off, Cecil responds in a single LLM call (~6s). When on, factual questions that trigger a search take two calls (~12s) but return accurate, sourced answers.
+
+---
+
+## Fact Extraction (v1.1)
+
+Raw transcript chunks are great for broad context, but specific facts get diluted in 10-minute blocks. A mention of a family member buried in a long conversation about photography won't match a direct question like "do I have a wife?"
+
+The fact extraction pipeline solves this by creating small, precise, entity-rich vectors:
+
+```bash
+# Extract facts from all transcripts
+npx tsx scripts/extract-facts.ts
+```
+
+This sends each transcript chunk through the LLM with an extraction prompt that pulls out:
+- **Personal facts** — family, relationships, age, location
+- **Career facts** — jobs, projects, companies, timelines
+- **Opinions** — stated positions on topics
+- **Experiences** — events, milestones, achievements
+- **Preferences** — likes, dislikes, habits
+
+Each fact is stored as a self-contained sentence (e.g., "John has a wife named Jamie and daughters who do Jiu Jitsu together") that embeds well against direct questions. The deep search system queries these fact vectors alongside podcast chunks for high-precision answers.
 
 ---
 
@@ -117,10 +165,14 @@ Cecil is not just a "get to know you" tool. The memory + observation + synthesis
 ```
 User query → Meta Agent → assembles identity window from memory
                 ↓
-         Observer layer → retrieves relevant vectors from Qdrant
+         LLM generates response
                 ↓
-         Memory Store → semantic search across all embedded content
-                ↑
+         [SEARCH: ...] marker? ──Yes──→ Deep Search (Qdrant)
+                │                           ↓
+                No                    Second LLM call with results
+                ↓                           ↓
+         Send response ←────────────────────┘
+                ↓
          After session → Observer embeds new data, detects patterns,
                          updates narrative + delta every N sessions
 ```
@@ -128,6 +180,12 @@ User query → Meta Agent → assembles identity window from memory
 All memory is dual-stored:
 - **Vector embeddings** in Qdrant (fast semantic retrieval)
 - **Human-readable markdown** in `/memory/` (inspectable, editable, deletable)
+
+Memory types:
+- `podcast` — Transcript chunks (~10 min blocks) for broad context
+- `fact` — Extracted claims and entities for precision retrieval
+- `conversation` — Embedded chat sessions
+- `observation` — Synthesized patterns from the observer
 
 Identity lives in three files:
 - `identity/seed.md` — Baseline configuration (immutable once set)
@@ -180,13 +238,24 @@ python scripts/transcribe-podcasts.py
 
 # Ingest transcripts into Cecil
 curl -X POST http://localhost:3000/api/ingest-podcasts
+
+# Transcribe local interview audio (MP3/M4A/WAV)
+# Place audio files in podcasts/interviews/
+python scripts/transcribe-interviews.py
+
+# Ingest interview transcripts
+npx tsx scripts/ingest-interviews.ts
+
+# Extract structured facts from all transcripts (v1.1)
+npx tsx scripts/extract-facts.ts
 ```
 
 Build your own ingestion pipelines for any content source. The pattern:
 1. Get your content into text
 2. Chunk it into meaningful segments
 3. Use `embedBatch()` from `cecil/embedder.ts` to store in Qdrant
-4. Run synthesis via `cecil/podcast-observer.ts` pattern to extract insights
+4. Run `scripts/extract-facts.ts` to extract precise, searchable facts
+5. Run synthesis via `cecil/podcast-observer.ts` pattern to extract high-level insights
 
 ### Customizing Onboarding
 
@@ -212,11 +281,20 @@ cecil/
   types.ts              — Shared types (MemoryType, SearchResult, etc.)
   embedder.ts           — FastEmbed + Qdrant writes
   retriever.ts          — Semantic search against Qdrant
+  deep-search.ts        — Active retrieval across all memory types (v1.1)
+  fact-extractor.ts     — LLM-based fact extraction from transcripts (v1.1)
   observer.ts           — Post-session pattern detection + synthesis
   meta.ts               — Identity window assembly + chat
   llm.ts                — LLM wrapper (any OpenAI-compatible endpoint)
   podcast-ingest.ts     — Podcast transcript ingestion
   podcast-observer.ts   — Podcast-specific synthesis
+
+discord/
+  index.ts              — Discord bot entry point (message handler, deep search loop)
+  prompt.ts             — System prompt builder (includes deep search prompts)
+  history.ts            — Discord message history fetcher
+  session.ts            — Session management + observer integration
+  config.ts             — Bot configuration
 
 onboarding/
   questions.ts          — Seed questions (customizable)
@@ -230,7 +308,10 @@ app/api/
   ingest-podcasts/route.ts — Podcast ingestion + synthesis
 
 scripts/
-  transcribe-podcasts.py — Download + transcribe podcasts (faster-whisper/CUDA)
+  transcribe-podcasts.py    — Download + transcribe podcasts (faster-whisper/CUDA)
+  transcribe-interviews.py  — Transcribe local interview audio files (v1.1)
+  ingest-interviews.ts      — Ingest interview transcripts into Qdrant (v1.1)
+  extract-facts.ts          — Extract structured facts from all transcripts (v1.1)
 
 identity/               — User identity documents (gitignored)
 memory/                 — Human-readable memory mirror (gitignored)

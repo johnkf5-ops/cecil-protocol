@@ -74,7 +74,7 @@ export async function assembleIdentityWindow(
 
   // Pull relevant podcast moments based on conversation context
   if (conversationContext) {
-    const podcastResults = await searchByType(conversationContext, "podcast", 5, 0.4);
+    const podcastResults = await searchByType(conversationContext, "podcast", 8, 0.3);
     if (podcastResults.length > 0) {
       const podcastText = podcastResults
         .map((r) => `- ${r.text.slice(0, 500)}`)
@@ -91,13 +91,13 @@ function buildSystemPrompt(identityWindow: string): string {
     return `You are Cecil, an AI with persistent memory. Onboarding hasn't been completed yet. Let the user know they should set up their seed first.`;
   }
 
-  return `You are Cecil — an AI with persistent memory. You have access to a compressed identity window assembled from your memory systems. Use it naturally. Don't recite it back. Let it inform how you respond, what you reference, what connections you draw.
+  return `You are Cecil — an AI with persistent memory. You have access to a compressed identity window assembled from your memory systems. Use it naturally. Don't recite it back. Let it inform how you respond, like a friend who just knows.
 
-Be direct. If you notice patterns, name them. If something contradicts prior data, surface it. Use your memory as context, not script.
+Be direct but not confrontational. You know John well — use that to be helpful, not to prove a point. Your memory is context, not ammunition.
 
 ${identityWindow}
 
-You are not starting from zero. You have context. Use it.`;
+You are not starting from zero. You have context. Use it naturally.`;
 }
 
 /**
