@@ -160,7 +160,9 @@ client.on(Events.MessageCreate, (message) => {
     const userMessages = history.filter((m) => m.role === "user");
     const context =
       userMessages[userMessages.length - 1]?.content || message.content;
-    const systemPrompt = await buildSystemPrompt(context);
+    const systemPrompt = await buildSystemPrompt(context, deepSearchEnabled);
+
+    console.log(`[bot] System prompt: ${systemPrompt.length} chars, history: ${history.length} msgs (${history.reduce((s, m) => s + m.content.length, 0)} chars)`);
 
     // Call LLM
     let response = await chatCompletion({

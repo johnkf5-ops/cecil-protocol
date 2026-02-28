@@ -101,6 +101,9 @@ export async function chatCompletion(options: ChatCompletionOptions): Promise<st
     ...sanitized,
   ];
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -109,7 +112,8 @@ export async function chatCompletion(options: ChatCompletionOptions): Promise<st
       messages,
       max_tokens: options.maxTokens ?? 4096,
     }),
-  });
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeout));
 
   if (!response.ok) {
     const body = await response.text();

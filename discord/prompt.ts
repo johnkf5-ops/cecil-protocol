@@ -17,7 +17,8 @@ async function readPersonalityFile(name: string): Promise<string> {
  * 4. Operational constraints (including deep search instruction)
  */
 export async function buildSystemPrompt(
-  conversationContext: string
+  conversationContext: string,
+  deepSearchEnabled: boolean = true
 ): Promise<string> {
   const [soul, agents, identityWindow] = await Promise.all([
     readPersonalityFile("SOUL.md"),
@@ -35,20 +36,26 @@ export async function buildSystemPrompt(
 
   parts.push("=== TEAM PROTOCOL ===\n" + agents);
 
-  parts.push(
-    `=== OPERATIONAL CONSTRAINTS ===
-- Keep responses under 2000 characters (Discord limit).
-- Do not output any thinking process, reasoning steps, or analysis.
-- You are in a Discord group chat. Messages from other agents are prefixed with [AgentName].
-- Messages from the human have no prefix.
-- When handing off, mention the next agent by name naturally.
-- Be concise. Target ${MAX_TOKENS} tokens max.
-- DEEP SEARCH: If the user asks a specific factual question about their past, their podcasts, interviews, personal details, or anything you're not confident about from your memory above, output ONLY the text [SEARCH: your search query] as your entire response. Use a keyword-rich query that targets the specific information needed. Examples:
-  - "Do I have a wife?" → [SEARCH: wife family partner spouse daughters personal life]
-  - "What did I say about AI?" → [SEARCH: opinions AI artificial intelligence future]
-  - "When did I start photography?" → [SEARCH: photography career beginning early start]
-  Do NOT search for things you already know from your memory context above. Only search when you genuinely need more information.`
-  );
+  const constraints = [
+    `- Keep responses under 2000 characters (Discord limit).`,
+    `- Do not output any thinking process, reasoning steps, or analysis.`,
+    `- You are in a Discord group chat. Messages from other agents are prefixed with [AgentName].`,
+    `- Messages from the human have no prefix.`,
+    `- When handing off, mention the next agent by name naturally.`,
+    `- Be concise. Target ${MAX_TOKENS} tokens max.`,
+  ];
+
+  if (deepSearchEnabled) {
+    constraints.push(
+      `- DEEP SEARCH: If the user asks a specific factual question about their past, their podcasts, interviews, personal details, or anything you're not confident about from your memory above, output ONLY the text [SEARCH: your search query] as your entire response. Use a keyword-rich query that targets the specific information needed. Examples:`,
+      `  - "Do I have a wife?" → [SEARCH: wife family partner spouse daughters personal life]`,
+      `  - "What did I say about AI?" → [SEARCH: opinions AI artificial intelligence future]`,
+      `  - "When did I start photography?" → [SEARCH: photography career beginning early start]`,
+      `  Do NOT search for things you already know from your memory context above. Only search when you genuinely need more information.`
+    );
+  }
+
+  parts.push("=== OPERATIONAL CONSTRAINTS ===\n" + constraints.join("\n"));
 
   return parts.join("\n\n");
 }

@@ -58,6 +58,9 @@ yarn-error.log*
 # discord bot personality files (copied from openclaw)
 /discord/personality/
 
+# session handoff notes
+sessionhandoff.md
+
 # claude code project data
 /.claude/
 
