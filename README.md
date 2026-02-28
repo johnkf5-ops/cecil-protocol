@@ -126,7 +126,7 @@ This sends each transcript chunk through the LLM with an extraction prompt that 
 - **Experiences** — events, milestones, achievements
 - **Preferences** — likes, dislikes, habits
 
-Each fact is stored as a self-contained sentence (e.g., "John has a wife named Jamie and daughters who do Jiu Jitsu together") that embeds well against direct questions. The deep search system queries these fact vectors alongside podcast chunks for high-precision answers.
+Each fact is stored as a self-contained sentence (e.g., "The user has two daughters who do Jiu Jitsu together") that embeds well against direct questions. The deep search system queries these fact vectors alongside podcast chunks for high-precision answers.
 
 ---
 

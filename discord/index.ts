@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits, TextChannel, Events } from "discord.js";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
-import { DISCORD_TOKEN, WAR_ROOM_ID, MAX_TOKENS } from "./config";
+import { DISCORD_TOKEN, WAR_ROOM_ID, MAX_TOKENS, BOT_NAME } from "./config";
 import { fetchHistory } from "./history";
 import { buildSystemPrompt, buildDeepSearchPrompt } from "./prompt";
 import { onResponse } from "./session";
@@ -128,7 +128,8 @@ client.on(Events.MessageCreate, (message) => {
 
   // Check for @mention or name mention
   const atMentioned = message.mentions.has(client.user!.id);
-  const nameMentioned = /\bmarcus\b/i.test(message.content);
+  const nameRe = new RegExp(`\\b${BOT_NAME}\\b`, "i");
+  const nameMentioned = nameRe.test(message.content);
   if (!atMentioned && !nameMentioned) return;
 
   console.log(

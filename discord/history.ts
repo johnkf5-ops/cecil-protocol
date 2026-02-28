@@ -4,7 +4,7 @@ import { HISTORY_LIMIT } from "./config";
 
 /**
  * Fetch last N messages from a Discord channel and format for LLM.
- * Marcus's own messages -> assistant role.
+ * Bot's own messages -> assistant role.
  * Other bots -> user role with [AgentName] prefix.
  * Human messages -> user role, no prefix.
  */

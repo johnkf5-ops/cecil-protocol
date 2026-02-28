@@ -11,7 +11,7 @@ async function readPersonalityFile(name: string): Promise<string> {
 
 /**
  * Build the full system prompt:
- * 1. Marcus SOUL.md — personality, voice, behavior
+ * 1. SOUL.md — personality, voice, behavior
  * 2. Cecil identity window — seed + narrative + delta + relevant observations
  * 3. AGENTS.md — team roster, channel rules, handoff protocol
  * 4. Operational constraints (including deep search instruction)
@@ -40,13 +40,13 @@ export async function buildSystemPrompt(
 - Keep responses under 2000 characters (Discord limit).
 - Do not output any thinking process, reasoning steps, or analysis.
 - You are in a Discord group chat. Messages from other agents are prefixed with [AgentName].
-- Messages from the human (John) have no prefix.
+- Messages from the human have no prefix.
 - When handing off, mention the next agent by name naturally.
 - Be concise. Target ${MAX_TOKENS} tokens max.
-- DEEP SEARCH: If John asks a specific factual question about his past, his podcasts, interviews, personal details, or anything you're not confident about from your memory above, output ONLY the text [SEARCH: your search query] as your entire response. Use a keyword-rich query that targets the specific information needed. Examples:
-  - "Do I have a wife?" → [SEARCH: John wife family partner spouse daughters personal life]
-  - "What did I say about AI?" → [SEARCH: John opinions AI artificial intelligence future]
-  - "When did I start photography?" → [SEARCH: John photography career beginning early start]
+- DEEP SEARCH: If the user asks a specific factual question about their past, their podcasts, interviews, personal details, or anything you're not confident about from your memory above, output ONLY the text [SEARCH: your search query] as your entire response. Use a keyword-rich query that targets the specific information needed. Examples:
+  - "Do I have a wife?" → [SEARCH: wife family partner spouse daughters personal life]
+  - "What did I say about AI?" → [SEARCH: opinions AI artificial intelligence future]
+  - "When did I start photography?" → [SEARCH: photography career beginning early start]
   Do NOT search for things you already know from your memory context above. Only search when you genuinely need more information.`
   );
 
@@ -78,7 +78,7 @@ export async function buildDeepSearchPrompt(
 
   parts.push(
     "=== DEEP SEARCH RESULTS ===\n" +
-      "You searched your memory and found the following. Use this to answer John's question accurately. If the answer is clearly in these results, cite it naturally. If it's not here, say you don't have that information.\n\n" +
+      "You searched your memory and found the following. Use this to answer the user's question accurately. If the answer is clearly in these results, cite it naturally. If it's not here, say you don't have that information.\n\n" +
       searchResults
   );
 
