@@ -1,14 +1,35 @@
 # Memory
 
-This directory is the human-readable mirror of Cecil's vector database. Every memory stored in Qdrant also exists here as markdown for inspection, editing, and deletion.
+This directory is Cecil's human-readable memory mirror.
 
-```
+It exists so the protocol's runtime memory is inspectable by a human, not trapped inside a database or vector store.
+
+Cecil stores memory in multiple forms at once:
+
+- Qdrant for semantic retrieval
+- SQLite for structured current state and memory-event history
+- Markdown files in `memory/` for direct inspection of runtime artifacts
+
+Typical runtime contents look like this:
+
+```text
 memory/
-  conversations/    ← Timestamped session logs
-  observations/     ← Observer-detected patterns and synthesis results
-  podcasts/         ← Podcast episode transcripts (from ingestion pipeline)
-  milestones/       ← Significant moments and turning points
-  .session-counter.json  ← Tracks when to trigger full synthesis
+  conversations/        timestamped session logs
+  observations/         synthesized observations, identity facets, and relationship summaries
+  podcasts/             ingested podcast transcript material
+  interviews/           ingested interview transcript material
+  facts/                extracted fact records from long-form content
+  milestones/           meaningful derived experience/event records
+  structured-memory.sqlite
+  .session-counter.json
 ```
 
-All subdirectories are gitignored — they contain personal data and should never be committed.
+Most of these files and folders are gitignored because they are personal runtime data, not source code.
+
+If you want to inspect the active memory substrate, prefer:
+
+- `npm run memory:inspect`
+- `npm run memory:audit`
+- `GET /api/memory`
+
+The markdown mirror is useful for understanding what happened at runtime. The SQLite store is the source of truth for structured current memory and memory events.

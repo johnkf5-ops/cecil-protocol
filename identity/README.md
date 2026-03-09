@@ -1,14 +1,20 @@
 # Identity
 
-This directory holds the user's identity documents. These files are generated during onboarding and updated by the observer over time.
+This directory holds Cecil's identity documents.
+
+These files are runtime data. They are generated during onboarding and updated over time as the system observes behavior and synthesizes a continuing self-model.
 
 | File | Purpose | Created by |
 |------|---------|------------|
-| `seed.md` | Immutable onboarding baseline — who you say you are | Onboarding |
-| `narrative.md` | Living document — who you're becoming based on patterns | Observer (full synthesis) |
-| `delta.md` | The gap between seed and narrative — stated vs revealed | Observer (full synthesis) |
-| `profile.md` | Optional public profile | User |
+| `seed.md` | Immutable onboarding baseline: who the user directly says they are | Onboarding |
+| `narrative.md` | Living self-model shaped by observer synthesis over time | Observer |
+| `delta.md` | Drift and tension between the original seed and later observed behavior | Observer |
+| `profile.md` | Optional public-facing profile material | User |
 
-All files except `seed.md` are updated automatically by the observer after every few sessions.
+Important distinctions:
 
-These files are gitignored — they contain personal data and should never be committed.
+- `seed.md` is the highest-confidence identity source because it is directly stated during onboarding.
+- `narrative.md` and `delta.md` are interpretive layers, not immutable ground truth.
+- These files are part of Cecil's identity substrate, but they are not the same thing as structured memory in SQLite.
+
+These files are gitignored because they contain personal runtime data and should not be committed to the public repo.

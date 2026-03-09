@@ -63,6 +63,14 @@ GET /api/memory?query=your+query&includeWindow=true
 GET /api/memory?query=your+query&includeAudit=true
 ```
 
+If your change affects synthesis or evidence framing, also validate:
+
+```bash
+npm run memory:synthesize
+```
+
+Then inspect whether the resulting memories are being presented as direct knowledge, public-corpus fact, public-corpus inference, or private conversation memory in the recall window.
+
 ## What Contributions Are Most Valuable
 
 ### 1. Memory Quality
@@ -74,6 +82,7 @@ Examples:
 - better milestone derivation
 - better provenance handling
 - stronger idempotent writes
+- clearer separation between direct memory and inferred memory
 
 ### 2. Retrieval Quality
 
@@ -83,6 +92,7 @@ Examples:
 - better dedupe
 - better token budgeting
 - better weighting of recency, quality, and source confidence
+- better evidence-tier handling for recall and answer generation
 
 ### 3. Inspectability
 
@@ -139,6 +149,8 @@ Examples:
 - Structured memory lives in `memory/structured-memory.sqlite`
 - Qdrant is still part of the active architecture
 - The memory API and audit tools are part of the intended contributor workflow, not just internal debugging
+- Runtime identity and memory files are gitignored and should stay out of public commits
+- Cecil now distinguishes seed-stated memory, public-corpus facts, public-corpus inference, and private conversation memory
 
 ## Pull Requests
 
