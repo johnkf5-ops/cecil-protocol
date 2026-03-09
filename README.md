@@ -2,6 +2,8 @@
 
 Persistent memory and identity protocol for AI systems.
 
+Cecil is an open-source protocol for giving AI systems durable identity, inspectable memory, and evidence-aware recall.
+
 Cecil is the working build of what started as Echo Protocol. It gives a bot a durable memory substrate, an evolving identity, and a retrieval loop that can answer from memory instead of guessing.
 
 Cecil has been open source since day one. v1.2 is not a first public release. It is the next public revision of the protocol, focused on making memory more structured, more inspectable, and more honest about what the system actually knows.
@@ -15,6 +17,18 @@ This repo tracks the working public Cecil build:
 - observer pipeline for post-session synthesis
 - deep search for factual recall
 - Discord bot integration
+
+## What Makes Cecil Different
+
+Most memory systems stop at chat history plus embeddings.
+
+Cecil is trying to build something stricter than that:
+
+- identity files, not just rolling chat context
+- structured memory plus semantic retrieval, not one opaque store
+- evidence-aware answers that distinguish direct memory from inference
+
+If you want a persistent AI system that can show what it knows, where it came from, and how certain it should be, that is the direction of this repo.
 
 ## What Changed In v1.2
 
