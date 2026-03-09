@@ -8,7 +8,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "discord": "npx tsx discord/index.ts"
+    "discord": "npx tsx discord/index.ts",
+    "memory:inspect": "tsx scripts/inspect-memory.ts",
+    "memory:audit": "tsx scripts/audit-memory.ts",
+    "memory:synthesize": "tsx scripts/synthesize-podcasts.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

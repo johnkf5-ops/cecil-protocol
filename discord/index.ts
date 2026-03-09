@@ -1,13 +1,23 @@
 import { Client, GatewayIntentBits, TextChannel, Events } from "discord.js";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
-import { DISCORD_TOKEN, WAR_ROOM_ID, MAX_TOKENS, BOT_NAME } from "./config";
+import { DISCORD_TOKEN, WAR_ROOM_ID, SPECS_CHANNEL_ID, MAX_TOKENS, BOT_NAME, MEETING_DELAY_MS, AGENT_IDS } from "./config";
 import { fetchHistory } from "./history";
 import { buildSystemPrompt, buildDeepSearchPrompt } from "./prompt";
 import { onResponse } from "./session";
 import { chatCompletion } from "../cecil/llm";
 import { initCollection } from "../cecil/embedder";
 import { deepSearch } from "../cecil/deep-search";
+import {
+  startMeeting,
+  endMeeting,
+  getMeeting,
+  advanceAgent,
+  firstAgent,
+  currentAgent,
+  nextAgent,
+  setClosingRound,
+} from "./meeting";
 
 const client = new Client({
   intents: [
@@ -19,6 +29,23 @@ const client = new Client({
 
 // --- Deep search toggle ---
 let deepSearchEnabled = true;
+
+// --- #specs relay (marker-based) ---
+// Agents write [TAG: name] when they want to hand off to another agent.
+// Cecil detects markers, waits 30s for segments to finish, then posts real @tags.
+// OpenClaw strips <@id> but not [TAG: name], so markers survive in agent output.
+const TAG_MARKER_RE = /\[TAG:\s*(\w+)\]/gi;
+let specsRelayTimeout: ReturnType<typeof setTimeout> | null = null;
+const specsRelayPending: Set<string> = new Set(); // agent IDs to tag
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function clearSpecsRelay(): void {
+  if (specsRelayTimeout) { clearTimeout(specsRelayTimeout); specsRelayTimeout = null; }
+  specsRelayPending.clear();
+}
 
 // --- Message queue (simple mutex) ---
 let processing = false;
@@ -54,8 +81,8 @@ async function handleClear(channel: TextChannel, count: number): Promise<void> {
     console.log(`[bot] Cleared ${fetched.size} messages from #${channel.name}`);
     const notice = await channel.send(`Cleared ${fetched.size} messages.`);
     setTimeout(() => notice.delete().catch(() => {}), 3000);
-  } catch (err: any) {
-    await channel.send(`Could not clear messages: ${err.message}`);
+  } catch (err: unknown) {
+    await channel.send(`Could not clear messages: ${getErrorMessage(err)}`);
   }
 }
 
@@ -87,141 +114,455 @@ async function handleReadFile(channel: TextChannel, filePath: string): Promise<v
       }
     }
     console.log(`[bot] Shared file: ${filePath.trim()} (${raw.length} chars)`);
-  } catch (err: any) {
-    await channel.send(`Could not read file: ${err.message}`);
+  } catch (err: unknown) {
+    await channel.send(`Could not read file: ${getErrorMessage(err)}`);
   }
 }
+
+// --- Core LLM response handler ---
+async function handleLLMResponse(
+  channel: TextChannel,
+  triggerContent: string,
+  isBot: boolean,
+  displayName: string,
+  agentTag?: { name: string; id: string } | null
+): Promise<void> {
+  await channel.sendTyping();
+
+  const meeting = getMeeting();
+
+  // Fetch conversation history (fewer messages during meetings to avoid context overflow)
+  const history = await fetchHistory(channel, client.user!.id, !!meeting?.active);
+
+  // Qwen requires the last message to be role:"user".
+  // Trim any trailing assistant messages, then ensure the trigger is last.
+  while (history.length && history[history.length - 1].role === "assistant") {
+    history.pop();
+  }
+  const formattedTrigger = isBot
+    ? `[${displayName}] ${triggerContent}`
+    : triggerContent;
+  const last = history[history.length - 1];
+  if (!last || !last.content.includes(formattedTrigger)) {
+    history.push({ role: "user", content: formattedTrigger });
+  }
+
+  // Re-merge to guarantee strict user/assistant alternation for Qwen.
+  // The trigger push above can create consecutive user messages.
+  for (let i = history.length - 1; i > 0; i--) {
+    if (history[i].role === history[i - 1].role) {
+      history[i - 1].content += "\n" + history[i].content;
+      history.splice(i, 1);
+    }
+  }
+
+  // Build system prompt with personality + Cecil memory + team protocol + meeting state
+  const userMessages = history.filter((m) => m.role === "user");
+  const context =
+    userMessages[userMessages.length - 1]?.content || triggerContent;
+  const systemPrompt = await buildSystemPrompt(context, deepSearchEnabled, meeting);
+
+  console.log(`[bot] System prompt: ${systemPrompt.length} chars, history: ${history.length} msgs (${history.reduce((s, m) => s + m.content.length, 0)} chars)`);
+
+  // Call LLM
+  let response = await chatCompletion({
+    system: systemPrompt,
+    messages: history,
+    maxTokens: MAX_TOKENS,
+  });
+
+  console.log(`[bot] LLM returned ${response.length} chars: ${response.slice(0, 120)}...`);
+
+  // Check for deep search marker (only if enabled and no active meeting)
+  const searchMatch = (deepSearchEnabled && !meeting?.active)
+    ? response.match(/\[SEARCH:\s*(.+?)\]/)
+    : null;
+  if (searchMatch) {
+    const searchQuery = searchMatch[1].trim();
+    console.log(`[bot] Deep search triggered: "${searchQuery}"`);
+
+    await channel.sendTyping();
+
+    const searchResult = await deepSearch(searchQuery);
+    console.log(`[bot] Deep search returned ${searchResult.results.length} results`);
+
+    if (searchResult.results.length > 0) {
+      const augmentedPrompt = await buildDeepSearchPrompt(
+        context,
+        searchResult.formattedContext
+      );
+
+      await channel.sendTyping();
+
+      response = await chatCompletion({
+        system: augmentedPrompt,
+        messages: history,
+        maxTokens: MAX_TOKENS,
+      });
+
+      console.log(`[bot] Post-search LLM returned ${response.length} chars`);
+    } else {
+      response =
+        "I dug through everything I have and couldn't find anything specific on that. Can you give me more context?";
+    }
+  }
+
+  // Strip any remaining search markers (safety net)
+  response = response.replace(/\[SEARCH:\s*.+?\]/g, "").trim();
+
+  // Strip any LLM-generated @mentions (code handles all tagging)
+  response = response.replace(/<@!?\d+>/g, "").replace(/<@[^>]*>/g, "").trim();
+
+  if (!response) {
+    console.error("[bot] Empty response from LLM — skipping send");
+    return;
+  }
+
+  // Append agent tag if provided (code-based routing — LLM never tags agents)
+  if (agentTag) {
+    response += `\n\n<@${agentTag.id}>`;
+    console.log(`[bot] Meeting: appended tag for ${agentTag.name} (<@${agentTag.id}>)`);
+  }
+
+  // Send to Discord (respect 2000 char limit)
+  await channel.send(response.slice(0, 2000));
+
+  // Feed into Cecil observer pipeline (background, non-blocking)
+  onResponse([...history, { role: "assistant", content: response }]);
+
+  console.log(`[bot] Replied (${response.length} chars)`);
+}
+
+// --- Command regexes ---
+const MEET_RE = /^!meet\s+(.+)$/i;
+const WRAP_RE = /^!wrap\b/i;
+const STOP_RE = /^!stop\b/i;
+const STATUS_RE = /^!status\b/i;
+const APPROVE_RE = /!approve\b/i;
 
 client.on(Events.MessageCreate, (message) => {
   // Ignore own messages
   if (message.author.id === client.user?.id) return;
 
+  // --- #specs relay: detect [TAG: name] markers, auto-tag after 30s debounce ---
+  if (
+    message.channelId === SPECS_CHANNEL_ID &&
+    message.author.bot &&
+    message.author.id !== client.user?.id
+  ) {
+    // Scan for [TAG: name] markers
+    let match: RegExpExecArray | null;
+    const tagRe = new RegExp(TAG_MARKER_RE.source, TAG_MARKER_RE.flags);
+    while ((match = tagRe.exec(message.content)) !== null) {
+      const name = match[1].toLowerCase();
+      const id = AGENT_IDS[name];
+      if (id) specsRelayPending.add(id);
+    }
+
+    if (specsRelayPending.size > 0) {
+      // Reset 30s debounce on every message (waits for segments to finish)
+      if (specsRelayTimeout) clearTimeout(specsRelayTimeout);
+      const tagsToSend = new Set(specsRelayPending);
+      specsRelayTimeout = setTimeout(async () => {
+        try {
+          const specsChannel = await client.channels.fetch(SPECS_CHANNEL_ID) as TextChannel;
+          const tags = [...tagsToSend].map(id => `<@${id}>`).join(" ");
+          await specsChannel.send(tags);
+          const names = [...tagsToSend].map(id =>
+            Object.entries(AGENT_IDS).find(([, v]) => v === id)?.[0] || id
+          );
+          console.log(`[bot] #specs relay: tagged ${names.join(", ")} via [TAG] markers`);
+        } catch (err) {
+          console.error("[bot] #specs relay failed:", err);
+        }
+        clearSpecsRelay();
+      }, 30000);
+      console.log(`[bot] #specs relay: [TAG] marker found — ${specsRelayPending.size} agent(s) queued, 30s timer reset`);
+    }
+    return;
+  }
+
+  // --- !clear in #specs (before war-room filter) ---
+  if (message.channelId === SPECS_CHANNEL_ID && !message.author.bot) {
+    const specsClearMatch = message.content.match(CLEAR_RE);
+    if (specsClearMatch) {
+      const count = Math.min(parseInt(specsClearMatch[1] || "100", 10), 100);
+      handleClear(message.channel as TextChannel, count);
+    }
+    return;
+  }
+
   // Only respond in #war-room
   if (message.channelId !== WAR_ROOM_ID) return;
 
-  // Handle !clear command
+  const channel = message.channel as TextChannel;
+  const meeting = getMeeting();
+
+  // --- !help command (always available) ---
+  if (/^!help\b/i.test(message.content)) {
+    const helpText = [
+      "**Commands**",
+      "`!meet <topic>` — Start a meeting on a topic",
+      "`!wrap` — Trigger closing round early",
+      "`!stop` — Hard stop the meeting immediately",
+      "`!status` — Show current meeting state",
+      "`!approve` — Approve and hand off to Nadia in #specs",
+      "`!deepsearch` — Toggle deep search on/off (currently **" + (deepSearchEnabled ? "ON" : "OFF") + "**)",
+      "`!clear [n]` — Delete last n messages (default 100)",
+      "`!readfile <path>` — Share a file's contents in chat",
+      "`!help` — This message",
+      "",
+      "**Meeting Flow**",
+      "Riley (intel) → Jules (ideas) → Ava (UX) → Eli (legal) → Nadia (spec) — 3 rounds, then wrap-up.",
+      "After wrap-up, `!approve` hands off to Nadia in #specs. Nadia writes the spec and tags Kai to build.",
+    ].join("\n");
+    channel.send(helpText);
+    return;
+  }
+
+  // --- !clear command (always available) ---
   const clearMatch = message.content.match(CLEAR_RE);
   if (clearMatch) {
     const count = Math.min(parseInt(clearMatch[1] || "100", 10), 100);
-    const channel = message.channel as TextChannel;
     handleClear(channel, count);
     return;
   }
 
-  // Handle !deepsearch toggle
+  // --- !deepsearch toggle (always available) ---
   if (/^!deepsearch$/i.test(message.content)) {
     deepSearchEnabled = !deepSearchEnabled;
-    const channel = message.channel as TextChannel;
     const status = deepSearchEnabled ? "ON" : "OFF";
     console.log(`[bot] Deep search toggled: ${status}`);
-    const notice = channel.send(`Deep search: **${status}**`);
+    channel.send(`Deep search: **${status}**`);
     return;
   }
 
-  // Handle !readfile command (no LLM, just dump file)
+  // --- !readfile command (always available) ---
   const readMatch = message.content.match(READFILE_RE);
   if (readMatch) {
-    const channel = message.channel as TextChannel;
     handleReadFile(channel, readMatch[1]);
     return;
   }
 
-  // Check for @mention or name mention
+  // --- !meet <topic> (start a meeting) ---
+  const meetMatch = message.content.match(MEET_RE);
+  if (meetMatch && !message.author.bot) {
+    if (meeting?.active) {
+      channel.send("Meeting already in progress. Use `!stop` to end it first.");
+      return;
+    }
+    const topic = meetMatch[1].trim();
+    startMeeting(topic);
+    const first = firstAgent();
+    console.log(`[bot] Meeting started: "${topic}" — first agent: ${first.name}`);
+
+    queue.push(async () => {
+      await handleLLMResponse(channel, `!meet ${topic}`, false, message.author.displayName, first);
+    });
+    drainQueue();
+    return;
+  }
+
+  // --- !wrap (trigger closing round early) ---
+  if (WRAP_RE.test(message.content) && !message.author.bot) {
+    if (!meeting?.active) {
+      channel.send("No meeting in progress.");
+      return;
+    }
+    setClosingRound();
+    console.log("[bot] Meeting: closing round triggered by !wrap");
+
+    queue.push(async () => {
+      await handleLLMResponse(channel, "!wrap — John wants to wrap up. Post your summary and spec outline now.", false, message.author.displayName, null);
+    });
+    drainQueue();
+    return;
+  }
+
+  // --- !stop (hard stop) ---
+  if (STOP_RE.test(message.content) && !message.author.bot) {
+    if (meeting?.active) {
+      endMeeting();
+      console.log("[bot] Meeting stopped by !stop");
+      channel.send("Meeting stopped.");
+    } else {
+      channel.send("No meeting in progress.");
+    }
+    return;
+  }
+
+  // --- !status (show meeting state) ---
+  if (STATUS_RE.test(message.content) && !message.author.bot) {
+    if (!meeting?.active) {
+      channel.send("No meeting in progress. Brain twin mode active.");
+      return;
+    }
+    const agent = currentAgent();
+    const statusMsg = [
+      `**Meeting Status**`,
+      `Topic: ${meeting.topic}`,
+      `Round: ${meeting.round} of 3`,
+      `Current agent: ${agent ? agent.name : "none"}`,
+      `Closing: ${meeting.closingRound ? "yes" : "no"}`,
+      `Awaiting approval: ${meeting.awaitingApproval ? "yes" : "no"}`,
+    ].join("\n");
+    channel.send(statusMsg);
+    return;
+  }
+
+  // --- !approve (hand off to Nadia in #specs, end meeting) ---
+  if (APPROVE_RE.test(message.content) && !message.author.bot) {
+    console.log("[bot] !approve triggered");
+    if (!meeting?.active) {
+      channel.send("No meeting in progress.");
+      return;
+    }
+
+    const topic = meeting.topic;
+    console.log("[bot] Spec approved by John — handing off to Nadia");
+
+    // Post handoff to #specs tagging Nadia
+    queue.push(async () => {
+      try {
+        if (!SPECS_CHANNEL_ID) {
+          console.error("[bot] SPECS_CHANNEL_ID not set — cannot hand off");
+          await channel.send("Error: #specs channel not configured.");
+          return;
+        }
+
+        const specsChannel = await client.channels.fetch(SPECS_CHANNEL_ID) as TextChannel;
+
+        // Build a brief meeting summary for Nadia's context
+        await channel.sendTyping();
+        const history = await fetchHistory(channel, client.user!.id, true);
+        while (history.length && history[history.length - 1].role === "assistant") {
+          history.pop();
+        }
+        history.push({ role: "user", content: `John approved. Write a 3-4 bullet summary of what the team decided during the meeting on "${topic}". Just the key decisions and requirements — Nadia will use this to write the full spec.` });
+
+        // Re-merge to guarantee alternation
+        for (let i = history.length - 1; i > 0; i--) {
+          if (history[i].role === history[i - 1].role) {
+            history[i - 1].content += "\n" + history[i].content;
+            history.splice(i, 1);
+          }
+        }
+
+        const userMessages = history.filter((m) => m.role === "user");
+        const context = userMessages[userMessages.length - 1]?.content || "";
+        const systemPrompt = await buildSystemPrompt(context, false, meeting);
+
+        let summary = await chatCompletion({
+          system: systemPrompt,
+          messages: history,
+          maxTokens: MAX_TOKENS,
+        });
+        summary = summary.replace(/\[SEARCH:\s*.+?\]/g, "").trim();
+        summary = summary.replace(/<@!?\d+>/g, "").replace(/<@[^>]*>/g, "").trim();
+
+        const nadiaId = AGENT_IDS["nadia"];
+        const handoff = summary
+          ? `**APPROVED — ${topic}**\n\n${summary}\n\n<@${nadiaId}> — write the full spec.`
+          : `**APPROVED — ${topic}**\n\nWrite the full spec based on the war-room discussion.\n\n<@${nadiaId}>`;
+
+        await specsChannel.send(handoff.slice(0, 2000));
+        console.log(`[bot] Handoff posted to #specs tagging Nadia (${handoff.length} chars)`);
+
+        await channel.send(`Meeting closed — handed off to Nadia in #specs.`);
+
+        // #specs relay is always active — no need to arm it
+      } catch (err) {
+        console.error("[bot] !approve handoff failed:", err);
+        // Fallback: post minimal handoff
+        try {
+          const specsChannel = await client.channels.fetch(SPECS_CHANNEL_ID) as TextChannel;
+          const nadiaId = AGENT_IDS["nadia"];
+          await specsChannel.send(`**APPROVED — ${topic}**\n\nWrite the full spec based on the war-room discussion.\n\n<@${nadiaId}>`);
+          await channel.send("Meeting closed — handed off to Nadia in #specs.");
+          // #specs relay is always active — no need to arm it
+        } catch {
+          await channel.send("Meeting closed. Could not post to #specs — hand off manually.");
+        }
+      }
+
+      // Meeting ALWAYS ends on !approve
+      endMeeting();
+      console.log("[bot] Meeting ended after approval");
+    });
+    drainQueue();
+    return;
+  }
+
+  // --- During active meeting: respond to ALL bot messages (agent responses) ---
+  if (meeting?.active && message.author.bot) {
+    console.log(
+      `[bot] Meeting: agent response from ${message.author.displayName}: ${message.content.slice(0, 80)}`
+    );
+
+    queue.push(async () => {
+      // Deliberate pause — prevents cascade, gives John time to !stop/!wrap
+      console.log(`[bot] Meeting: waiting ${MEETING_DELAY_MS}ms before responding...`);
+      await new Promise((r) => setTimeout(r, MEETING_DELAY_MS));
+
+      // Check if meeting was stopped during the delay
+      const current = getMeeting();
+      if (!current?.active) {
+        console.log("[bot] Meeting ended during delay — skipping response");
+        return;
+      }
+
+      // Only process messages from the agent we're currently expecting (split message guard)
+      const expected = currentAgent();
+      if (expected && message.author.id !== expected.id) {
+        console.log(`[bot] Meeting: ignoring split/extra message from ${message.author.displayName} (waiting for ${expected.name})`);
+        return;
+      }
+
+      // Peek at next agent (don't advance yet — advance only after success)
+      const next = nextAgent();
+
+      if (!next) {
+        console.log("[bot] Meeting: closing round — no more agent tags");
+      } else {
+        console.log(`[bot] Meeting: next up: ${next.name} (round ${current.round})`);
+      }
+
+      try {
+        await handleLLMResponse(channel, message.content, true, message.author.displayName, next);
+        // Advance state only after successful send
+        advanceAgent();
+      } catch (err) {
+        console.error("[bot] Meeting: LLM failed, sending fallback:", err);
+        // Send fallback to keep meeting moving
+        if (next) {
+          await channel.send(`Let's keep moving — <@${next.id}>`);
+        }
+        advanceAgent();
+      }
+    });
+    drainQueue();
+    return;
+  }
+
+  // --- Outside of meetings: ignore ALL bot messages (prevents loops) ---
+  if (!meeting?.active && message.author.bot) return;
+
+  // --- Default: respond to @mention or name mention (brain twin mode + meeting human messages) ---
   const atMentioned = message.mentions.has(client.user!.id);
   const nameRe = new RegExp(`\\b${BOT_NAME}\\b`, "i");
   const nameMentioned = nameRe.test(message.content);
-  if (!atMentioned && !nameMentioned) return;
+
+  // During active meeting, also respond to human messages (no mention needed)
+  const shouldRespond = atMentioned || nameMentioned || (meeting?.active && !message.author.bot);
+
+  if (!shouldRespond) return;
 
   console.log(
     `[bot] Triggered by ${message.author.displayName}: ${message.content.slice(0, 80)}`
   );
 
   queue.push(async () => {
-    const channel = message.channel as TextChannel;
-    await channel.sendTyping();
-
-    // Fetch conversation history
-    const history = await fetchHistory(channel, client.user!.id);
-
-    // Qwen requires the last message to be role:"user".
-    // Trim any trailing assistant messages, then ensure the trigger is last.
-    while (history.length && history[history.length - 1].role === "assistant") {
-      history.pop();
-    }
-    const triggerContent = message.author.bot
-      ? `[${message.author.displayName}] ${message.content}`
-      : message.content;
-    const last = history[history.length - 1];
-    if (!last || last.content !== triggerContent) {
-      history.push({ role: "user", content: triggerContent });
-    }
-
-    // Build system prompt with personality + Cecil memory + team protocol
-    const userMessages = history.filter((m) => m.role === "user");
-    const context =
-      userMessages[userMessages.length - 1]?.content || message.content;
-    const systemPrompt = await buildSystemPrompt(context, deepSearchEnabled);
-
-    console.log(`[bot] System prompt: ${systemPrompt.length} chars, history: ${history.length} msgs (${history.reduce((s, m) => s + m.content.length, 0)} chars)`);
-
-    // Call LLM
-    let response = await chatCompletion({
-      system: systemPrompt,
-      messages: history,
-      maxTokens: MAX_TOKENS,
-    });
-
-    console.log(`[bot] LLM returned ${response.length} chars: ${response.slice(0, 120)}...`);
-
-    // Check for deep search marker (only if enabled)
-    const searchMatch = deepSearchEnabled
-      ? response.match(/\[SEARCH:\s*(.+?)\]/)
-      : null;
-    if (searchMatch) {
-      const searchQuery = searchMatch[1].trim();
-      console.log(`[bot] Deep search triggered: "${searchQuery}"`);
-
-      await channel.sendTyping();
-
-      const searchResult = await deepSearch(searchQuery);
-      console.log(`[bot] Deep search returned ${searchResult.results.length} results`);
-
-      if (searchResult.results.length > 0) {
-        const augmentedPrompt = await buildDeepSearchPrompt(
-          context,
-          searchResult.formattedContext
-        );
-
-        await channel.sendTyping();
-
-        response = await chatCompletion({
-          system: augmentedPrompt,
-          messages: history,
-          maxTokens: MAX_TOKENS,
-        });
-
-        console.log(`[bot] Post-search LLM returned ${response.length} chars`);
-      } else {
-        response =
-          "I dug through everything I have and couldn't find anything specific on that. Can you give me more context?";
-      }
-    }
-
-    // Strip any remaining search markers (safety net)
-    response = response.replace(/\[SEARCH:\s*.+?\]/g, "").trim();
-
-    if (!response) {
-      console.error("[bot] Empty response from LLM — skipping send");
-      return;
-    }
-
-    // Send to Discord (respect 2000 char limit)
-    await channel.send(response.slice(0, 2000));
-
-    // Feed into Cecil observer pipeline (background, non-blocking)
-    onResponse([...history, { role: "assistant", content: response }]);
-
-    console.log(`[bot] Replied (${response.length} chars)`);
+    await handleLLMResponse(channel, message.content, message.author.bot, message.author.displayName);
   });
 
   drainQueue();

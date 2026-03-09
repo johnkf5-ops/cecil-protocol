@@ -15,6 +15,7 @@ interface ChatCompletionOptions {
   system: string;
   messages: { role: "user" | "assistant"; content: string }[];
   maxTokens?: number;
+  timeoutMs?: number;
 }
 
 export function getModel(): string {
@@ -102,7 +103,7 @@ export async function chatCompletion(options: ChatCompletionOptions): Promise<st
   ];
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60_000);
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 60_000);
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",

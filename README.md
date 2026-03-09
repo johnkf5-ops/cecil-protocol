@@ -1,343 +1,991 @@
-# Cecil v1.1
+# Cecil v1.2
 
-**Give AI a self.**
+Persistent memory and identity protocol for AI systems.
 
-Cecil is an open source memory and identity protocol for AI. Not an app — infrastructure. The foundational layer that gives any AI model persistent memory, pattern recognition, and a continuous sense of context over time.
+Cecil is the working build of what started as Echo Protocol. It gives a bot a durable memory substrate, an evolving identity, and a retrieval loop that can answer from memory instead of guessing.
 
-Every AI currently forgets you the moment you close the tab. Not because the models aren't powerful enough — because there's no persistent self underneath them. Cecil fixes that.
+Cecil has been open source since day one. v1.2 is not a first public release. It is the next public revision of the protocol, focused on making memory more structured, more inspectable, and more honest about what the system actually knows.
+
+This repo tracks the working public Cecil build:
+
+- web chat UI with onboarding
+- persistent identity files
+- Qdrant semantic memory
+- SQLite structured memory substrate
+- observer pipeline for post-session synthesis
+- deep search for factual recall
+- Discord bot integration
+
+## What Changed In v1.2
+
+v1.2 is the protocol revision where Cecil stops treating memory as one undifferentiated embedding pile.
+
+The main differences in this version are:
+
+- dual-store memory that keeps Qdrant for semantic retrieval and SQLite for structured current state and lifecycle history
+- evidence-aware recall tiers that distinguish `SEED_STATED`, `PUBLIC_CORPUS_FACT`, `PUBLIC_CORPUS_INFERENCE`, and `PRIVATE_CONVERSATION`
+- synthesized seed-profile, identity, and relationship observations that answer broad questions more cleanly than raw transcript facts alone
+- ranked recall improvements that reduce recency pollution, collapse duplicate fact/milestone twins, and better prioritize topical matches
+- retirement of stale synthesized memories so outdated facets do not linger in current state
+
+This version is less about adding UI surface area and more about making the protocol's memory claims legible, inspectable, and epistemically disciplined.
+
+## Who This Is For
+
+Cecil is for people building systems that need continuity, not just chat completion.
+
+That includes:
+
+- personal AI systems that should actually remember a person over time
+- agent builders who want memory, identity, and drift detection
+- researchers experimenting with long-lived AI behavior
+- bot builders who want inspectable memory instead of opaque prompting
+- developers building multi-agent environments where relationships should persist
+
+If what you want is "one more chat wrapper," Cecil is probably too much.
+
+If what you want is a memory protocol that can grow into a real substrate for persistent AI, this is what the repo is for.
+
+## Architecture Diagram
 
 ```mermaid
 flowchart TB
-    subgraph CONVERSATION["During Conversation"]
-        Q["User Query"] --> MA["Meta Agent"]
-        MA --> IW["Assembles Identity Window\n20-50k tokens of signal"]
-        IW --> LLM["Any LLM"]
-        LLM --> CHECK{"Needs more\ninfo?"}
-        CHECK -- No --> R["Response"]
-        CHECK -- "Yes: [SEARCH: ...]" --> DS["Deep Search\nTargeted Qdrant query\nacross all memory types"]
-        DS --> LLM2["Second LLM Call\nwith search results"]
-        LLM2 --> R
+    subgraph INPUT["Inputs"]
+        U["User chat"]
+        O["Onboarding answers"]
+        P["Podcast transcripts"]
+        I["Interview transcripts"]
     end
 
-    subgraph MEMORY["Memory Store (Qdrant)"]
-        VEC["Vector Embeddings\nSemantic Search"]
-        FACTS["Fact Vectors\nExtracted claims & entities"]
-        MD["Markdown Mirror\nHuman-Readable"]
+    subgraph RUNTIME["Runtime"]
+        CHAT["/api/chat"]
+        META["Meta / Prompt Builder"]
+        RECALL["Ranked Recall Window"]
+        LLM["LLM"]
+        DS{"[SEARCH: ...]?"}
+        DEEP["Deep Search"]
+        OBS["Observer"]
     end
 
-    subgraph IDENTITY["Identity"]
-        SEED["seed.md\nBaseline (immutable)"]
-        NAR["narrative.md\nEvolving patterns"]
-        DEL["delta.md\nDrift detection"]
+    subgraph STORAGE["Storage"]
+        ID["Identity Files\nseed / narrative / delta / profile"]
+        Q["Qdrant\nsemantic memory"]
+        SQL["SQLite\nmemory_current / memory_events"]
+        MD["Markdown Mirror\nmemory/"]
     end
 
-    subgraph OBSERVER["After Session — Observer"]
-        LP["Light Pass\nEmbed conversation\n(0 LLM calls)"]
-        FS["Full Synthesis\nDetect patterns → Update narrative → Compute delta\n(3 LLM calls every N sessions)"]
+    subgraph TOOLS["Capture Pipelines"]
+        SB["Seed Builder"]
+        PI["Podcast Ingest"]
+        II["Interview Ingest"]
+        FE["Fact Extraction"]
+        INS["Memory Inspect API / CLI"]
     end
 
-    MA -. retrieves .-> VEC
-    DS -. searches .-> VEC
-    DS -. searches .-> FACTS
-    MA -. reads .-> IDENTITY
-    R --> LP
-    LP --> VEC
-    LP --> MD
-    FS --> NAR
-    FS --> DEL
-    FS -. reads .-> VEC
+    O --> SB
+    SB --> ID
+    SB --> Q
+    SB --> SQL
 
-    style CONVERSATION fill:#1a1a2e,stroke:#4a4a8a,color:#fff
-    style MEMORY fill:#16213e,stroke:#4a4a8a,color:#fff
-    style IDENTITY fill:#0f3460,stroke:#4a4a8a,color:#fff
-    style OBSERVER fill:#1a1a2e,stroke:#4a4a8a,color:#fff
+    U --> CHAT
+    CHAT --> META
+    META --> ID
+    META --> RECALL
+    RECALL --> Q
+    RECALL --> SQL
+    META --> LLM
+    LLM --> DS
+    DS -- No --> RESP["Answer"]
+    DS -- Yes --> DEEP
+    DEEP --> Q
+    DEEP --> LLM
+    LLM --> RESP
+    RESP --> OBS
+    OBS --> ID
+    OBS --> Q
+    OBS --> SQL
+    OBS --> MD
+
+    P --> PI
+    PI --> Q
+    PI --> SQL
+    PI --> MD
+
+    I --> II
+    II --> Q
+    II --> SQL
+    II --> MD
+
+    P --> FE
+    I --> FE
+    FE --> Q
+    FE --> SQL
+    FE --> MD
+
+    INS --> SQL
 ```
 
----
+## What Cecil Does
 
-## What Makes This Different
+Cecil does not just keep chat history.
 
-Most AI memory solutions stuff everything into a context window. That creates noise, not memory. The model gets lost, reasoning degrades, hallucinations increase.
+It maintains several layers of memory:
 
-Cecil distributes memory across four layers:
+- `seed` for the original baseline identity
+- `narrative` for the evolving self-model
+- `delta` for drift between baseline and observed behavior
+- `conversation` memory from sessions
+- `observation` memory from synthesis passes, including profile, identity, and relationship layers
+- `fact` memory extracted from long-form content
+- `podcast` and interview transcript memory
+- `milestone` memory derived from meaningful experiences/events
 
-1. **Memory Store** — Qdrant vector database running locally. Every conversation, observation, and data point gets embedded and stored. Retrieval is semantic, not keyword-based. Fast and free — no LLM calls.
+It stores memory in two forms at the same time:
 
-2. **Observer** — Runs after sessions. Detects patterns, contradictions, and evolution over time. Compresses raw memory into insight. Light pass every session (zero LLM calls), full synthesis every N sessions (3 LLM calls).
+- Qdrant for semantic retrieval
+- SQLite for structured current state and append-only memory events
 
-3. **Meta Agent** — Assembles a distilled identity window before every conversation. 20-50k tokens of signal, not noise. The AI doesn't get your entire history — it gets the compressed understanding of who you are and what matters right now.
+That combination is the current build's main upgrade. Qdrant is still used. SQLite was added underneath it so memory has a better substrate for ranking, provenance, debugging, and future recall logic.
 
-4. **Deep Search** *(new in v1.1)* — Active retrieval loop. When the AI doesn't know the answer, it can trigger a targeted search across all memory types — facts, podcasts, observations — and respond with sourced information instead of guessing. No function calling required. Works with any LLM via a marker-based system.
+## Current Architecture
 
-The result: an AI that doesn't just remember what you said — it understands how you think, can look things up when it needs to, and evolves.
+### 1. Identity Layer
 
----
+Identity lives in:
 
-## It Evolves
+- `identity/seed.md`
+- `identity/narrative.md`
+- `identity/delta.md`
+- optionally `identity/profile.md`
 
-Cecil isn't static memory. It's a feedback loop.
+The seed is immutable. Narrative and delta change over time as Cecil observes actual behavior.
 
-The observer doesn't just store data — it watches for **drift**. Every few sessions, it compares what was configured (the seed) against what it's actually seeing (the patterns). The delta between those two is where the insight lives.
+### 2. Capture Layer
 
-This works the same way whether Cecil is observing a person, an agent, or itself.
+Cecil currently writes structured memory for:
 
-- The **seed** is the initial configuration — what the subject was set up to be.
-- The **narrative** is the evolving understanding — what the patterns actually show.
-- The **delta** is the drift — where reality diverges from intent.
+- onboarding seed capture
+- seed-derived profile observations
+- conversation/session capture
+- observer synthesis results
+- podcast ingestion
+- interview ingestion
+- transcript fact extraction
+- milestone derivation from experience facts
+- synthesized public-corpus identity observations
+- synthesized public-corpus relationship observations
 
-If Cecil is powering an agent, and that agent starts behaving differently than configured — responding differently, prioritizing different things, drifting from its original purpose — the observer catches it. The narrative updates. The delta surfaces the gap. The agent can then use that self-awareness to correct course or lean into the evolution.
+### 3. Storage Layer
 
-This is what makes it alive in a meaningful sense. It's not just remembering — it's noticing its own patterns, detecting its own drift, and building an evolving model of what it's becoming. The observer doesn't care if it's watching a human or watching itself. It just looks for the gap between baseline and reality.
+Human-readable memory stays in `memory/`.
 
----
+Structured memory now also lives in:
 
-## Deep Search (v1.1)
+- `memory/structured-memory.sqlite`
 
-In v1.0, Cecil could only use what was automatically retrieved into its context window before responding. If the right memory didn't surface, it would guess — or worse, confidently say something wrong.
+That SQLite database contains:
 
-Deep search fixes this. When Cecil encounters a factual question it can't answer from its current context, it triggers an active search:
+- `memory_current`
+- `memory_events`
 
-1. The LLM outputs a `[SEARCH: keyword query]` marker instead of guessing
-2. The bot intercepts the marker and runs a targeted Qdrant search across all memory types (facts, podcasts, observations) with generous limits
-3. Search results are injected into a second prompt
-4. The LLM responds with sourced, accurate information
+`memory_current` is the latest version of a memory record.
 
-This works with **any LLM** — no function calling required. The marker-based system uses standard text output that any model can produce.
+`memory_events` is the append-only lifecycle log.
 
-Deep search is toggleable at runtime. In the Discord bot, use `!deepsearch` to toggle it on/off. When off, Cecil responds in a single LLM call (~6s). When on, factual questions that trigger a search take two calls (~12s) but return accurate, sourced answers.
+Each record can carry:
 
----
+- memory type
+- timestamp
+- session ID
+- source path
+- source type
+- source ID
+- source episode
+- quality score
+- provenance blob
 
-## Fact Extraction (v1.1)
+### 4. Retrieval Layer
 
-Raw transcript chunks are great for broad context, but specific facts get diluted in 10-minute blocks. A mention of a family member buried in a long conversation about photography won't match a direct question like "do I have a wife?"
+Retrieval now has two paths:
 
-The fact extraction pipeline solves this by creating small, precise, entity-rich vectors:
+- Qdrant semantic search
+- SQLite ranked recall candidates
+
+The prompt builder merges those signals into a recall window, dedupes them, ranks them, and applies token budgets before handing context to the model.
+
+That recall window now also carries evidence tiers, so Cecil can distinguish hard seed facts from public-corpus facts, public-corpus inference, and private conversation memory.
+
+### 5. Response Layer
+
+Chat works like this:
+
+1. Cecil assembles the identity window
+2. Cecil merges recall from structured memory and semantic search
+3. The model responds
+4. If the model emits `[SEARCH: ...]`, Cecil runs deep search
+5. Cecil answers again using the search results
+6. After the session, observer capture runs
+
+## Main Features In This Build
+
+### Shared Response Pipeline
+
+Web chat and the newer response flow use the same deep-search pipeline instead of separate logic branches.
+
+### Structured Memory Substrate
+
+SQLite is now part of the protocol, not a replacement for Qdrant.
+
+This is the important current direction of the project.
+
+## Why SQLite Was Added Without Removing Qdrant
+
+This is the key design decision in v1.2.
+
+Qdrant is still valuable because it is good at semantic retrieval across large bodies of text. That is still the right tool for:
+
+- broad semantic recall
+- transcript chunk retrieval
+- fuzzy matching across long-form content
+- fast embedding-based search
+
+But Qdrant alone is not a great full memory substrate.
+
+It does not naturally give you the clean structured behaviors you want for:
+
+- current state vs history
+- append-only memory events
+- provenance tracking
+- source-quality tracking
+- exact inspection/debugging
+- future ranking logic that needs more than vector similarity
+
+So Cecil now uses both:
+
+- Qdrant for semantic search
+- SQLite for structured memory state and lifecycle history
+
+That means the system does not have to choose between:
+
+- fuzzy semantic recall
+- precise inspectable memory records
+
+It gets both.
+
+In plain terms:
+
+- Qdrant helps Cecil remember things that are similar
+- SQLite helps Cecil know what it knows, where it came from, and what changed
+
+### Evidence-Aware Recall
+
+Cecil now labels memory by what kind of evidence it represents.
+
+Recall and prompt assembly distinguish:
+
+- `SEED_STATED`
+- `PUBLIC_CORPUS_FACT`
+- `PUBLIC_CORPUS_INFERENCE`
+- `PRIVATE_CONVERSATION`
+
+That lets the system answer more honestly. It can prefer direct seed facts when they exist, use public-corpus inference carefully, and say "I do not actually know" when the evidence is not there.
+
+### Identity And Relationship Synthesis
+
+Broad questions are no longer forced to rely only on raw transcript facts.
+
+v1.2 writes:
+
+- seed-derived profile observations
+- public-corpus identity observations
+- public-corpus relationship observations
+
+This makes questions like "What matters to me?" or "What is my relationship with X?" much cleaner than pure chunk retrieval.
+
+### Ranked Recall Improvements
+
+Ranked recall in v1.2 is no longer just groundwork.
+
+It now reduces unrelated recent-memory pollution, collapses duplicate fact/milestone twins, and gives broad identity questions a cleaner path through synthesized observations.
+
+### Synthesized Memory Retirement
+
+When synthesis reruns, missing facets can now be retired from current memory instead of lingering forever.
+
+That keeps current state cleaner and makes repeated synthesis safer.
+
+### Memory Inspection
+
+You can inspect memory state through:
+
+- CLI: `npm run memory:inspect`
+- API: `GET /api/memory`
+
+You can also ask for the merged recall window used for prompting:
+
+- `GET /api/memory?query=your+query&includeWindow=true`
+
+## First 10 Minutes
+
+If you just want to get oriented and see Cecil working, do this:
+
+### Minute 1: start the dependencies
 
 ```bash
-# Extract facts from all transcripts
-npx tsx scripts/extract-facts.ts
-```
-
-This sends each transcript chunk through the LLM with an extraction prompt that pulls out:
-- **Personal facts** — family, relationships, age, location
-- **Career facts** — jobs, projects, companies, timelines
-- **Opinions** — stated positions on topics
-- **Experiences** — events, milestones, achievements
-- **Preferences** — likes, dislikes, habits
-
-Each fact is stored as a self-contained sentence (e.g., "The user has two daughters who do Jiu Jitsu together") that embeds well against direct questions. The deep search system queries these fact vectors alongside podcast chunks for high-precision answers.
-
----
-
-## The Real Power: Ingestion
-
-The onboarding flow asks 5 seed questions to get started. That's the cold start. It works, but it's shallow.
-
-The real power is feeding Cecil raw content and letting the observer synthesize it:
-
-- **Podcasts** — 44 hours of unfiltered conversation transcribed and embedded. Cecil learns how you argue, what you believe, your recurring themes, your contradictions. Richer than any profile page.
-- **Blog posts, journal entries, writing** — Feed it your words, it learns your voice.
-- **Code repositories** — Feed it your codebase, it learns your architecture, patterns, and failure modes.
-- **Chat history** — Feed it Slack, Discord, or support logs. It learns group dynamics, communication patterns, escalation triggers.
-- **Research** — Feed it papers, transcripts, documentation. It synthesizes themes across sources.
-
-The protocol is the same every time: **Ingest → Embed → Observe → Synthesize → Retrieve.** What changes is what you feed it and what you ask it to remember.
-
-The included podcast pipeline (`scripts/transcribe-podcasts.py`) is one example. Point it at an RSS feed, it downloads, transcribes with faster-whisper on GPU, chunks the transcripts, embeds them into Qdrant, and runs synthesis. You can build the same pipeline for any content source.
-
----
-
-## Use Cases
-
-Cecil is not just a "get to know you" tool. The memory + observation + synthesis loop is a general-purpose pattern:
-
-- **Personal AI** — An AI that actually knows you. References things you said months ago. Notices when you contradict yourself. Evolves its understanding as you do.
-- **Agent memory** — Give any AI agent persistent context. A Discord bot that remembers every conversation. A coding assistant that learns your codebase over time.
-- **Team of agents** — Spin up multiple Cecil instances with different memory pools. Each one observes different data, develops different expertise, maintains its own identity.
-- **Moderation** — Feed it channel history. It learns community dynamics, detects pattern shifts, understands context that keyword filters miss.
-- **Autonomous workflows** — An agent that runs recursive tasks and learns from each iteration. It doesn't just execute — it observes what worked, what failed, and adapts.
-
----
-
-## Architecture
-
-```
-User query → Meta Agent → assembles identity window from memory
-                ↓
-         LLM generates response
-                ↓
-         [SEARCH: ...] marker? ──Yes──→ Deep Search (Qdrant)
-                │                           ↓
-                No                    Second LLM call with results
-                ↓                           ↓
-         Send response ←────────────────────┘
-                ↓
-         After session → Observer embeds new data, detects patterns,
-                         updates narrative + delta every N sessions
-```
-
-All memory is dual-stored:
-- **Vector embeddings** in Qdrant (fast semantic retrieval)
-- **Human-readable markdown** in `/memory/` (inspectable, editable, deletable)
-
-Memory types:
-- `podcast` — Transcript chunks (~10 min blocks) for broad context
-- `fact` — Extracted claims and entities for precision retrieval
-- `conversation` — Embedded chat sessions
-- `observation` — Synthesized patterns from the observer
-
-Identity lives in three files:
-- `identity/seed.md` — Baseline configuration (immutable once set)
-- `identity/narrative.md` — Evolving understanding based on observed patterns (updated by observer)
-- `identity/delta.md` — Drift between baseline and reality (updated by observer)
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- Node.js 18+
-- Docker (for Qdrant)
-- Any OpenAI-compatible LLM (local or cloud)
-
-### Setup
-
-```bash
-# Clone
-git clone https://github.com/johnkf5-ops/cecil-protocol.git
-cd cecil-protocol
-
-# Start Qdrant
 docker compose up -d
-
-# Install dependencies
-npm install
-
-# Configure your LLM endpoint
-cp .env.example .env
-# Edit .env — set LLM_BASE_URL and MODEL for your provider
-
-# Run
 npm run dev
 ```
 
-Open `http://localhost:3000` — complete the onboarding, then start chatting.
+Then open `http://localhost:3000`.
 
-### Feed It Content (Optional)
+### Minute 2: complete onboarding
 
-The onboarding gives you a seed. To go deeper, feed Cecil real content:
+Answer the onboarding questions so Cecil can create:
+
+- `identity/seed.md`
+- `identity/narrative.md`
+- `identity/delta.md`
+
+This gives the system a baseline self to work from.
+
+### Minute 3: send a few chat messages
+
+Talk to Cecil for a few turns in the web UI.
+
+That creates:
+
+- markdown session logs in `memory/conversations/`
+- Qdrant conversation embeddings
+- SQLite structured conversation records
+
+### Minute 4: trigger observer memory
+
+As more sessions happen, the observer writes:
+
+- new observations
+- narrative updates
+- delta updates
+
+This is where Cecil stops being just a chatbot log and starts becoming a memory system.
+
+### Minute 5: inspect the structured memory
+
+Use the API:
+
+```text
+GET /api/memory
+```
+
+Or use the CLI:
 
 ```bash
-# Example: Podcast transcription pipeline
-pip install faster-whisper requests feedparser
+npm run memory:inspect -- --limit=10
+```
 
-# Edit scripts/transcribe-podcasts.py — set your RSS feed URL
+You should see current memory state and recent memory events.
+
+### Minute 6: inspect the actual recall window
+
+Ask the memory API for a ranked recall window:
+
+```text
+GET /api/memory?query=what+matters+to+john&includeWindow=true
+```
+
+This shows the merged memory context Cecil is preparing before answering.
+
+### Minute 7: test deep search
+
+Ask Cecil a factual question that may require retrieval from stored memory.
+
+If the first prompt does not have enough context, Cecil can emit `[SEARCH: ...]`, run deep search, and answer from the retrieved results.
+
+### Minute 8: ingest longer content
+
+If you have transcripts or audio:
+
+```bash
 python scripts/transcribe-podcasts.py
-
-# Ingest transcripts into Cecil
 curl -X POST http://localhost:3000/api/ingest-podcasts
+```
 
-# Transcribe local interview audio (MP3/M4A/WAV)
-# Place audio files in podcasts/interviews/
+Or for interviews:
+
+```bash
 python scripts/transcribe-interviews.py
-
-# Ingest interview transcripts
 npx tsx scripts/ingest-interviews.ts
+```
 
-# Extract structured facts from all transcripts (v1.1)
+### Minute 9: extract facts
+
+```bash
 npx tsx scripts/extract-facts.ts
 ```
 
-Build your own ingestion pipelines for any content source. The pattern:
-1. Get your content into text
-2. Chunk it into meaningful segments
-3. Use `embedBatch()` from `cecil/embedder.ts` to store in Qdrant
-4. Run `scripts/extract-facts.ts` to extract precise, searchable facts
-5. Run synthesis via `cecil/podcast-observer.ts` pattern to extract high-level insights
+This creates smaller, sharper factual memory records and milestone records.
 
-### Customizing Onboarding
+### Minute 10: inspect again
 
-The default onboarding asks 5 seed questions. You can customize these in `onboarding/questions.ts` to ask whatever matters for your use case. The seed is just a starting point — the observer will build the real understanding over time from actual interactions and ingested content.
+Run the memory inspector one more time:
 
----
+```bash
+npm run memory:inspect -- --query="What matters to John?" --window
+```
 
-## Tech Stack
+At that point you can see the difference between:
 
-- **Next.js** — Frontend and API routes
-- **TypeScript** — Everything
-- **Qdrant** — Vector database, local via Docker
-- **FastEmbed** — Local embeddings (all-MiniLM-L6-v2, 384 dims, zero API cost)
-- **Any LLM** — OpenAI-compatible endpoint (LM Studio, Ollama, Claude, GPT, etc.)
-- **Markdown** — Human-readable memory mirror
+- raw stored memory
+- structured current state
+- append-only memory events
+- the final ranked recall window
 
----
+That is the fastest path to understanding the system end to end.
+
+## How Memory Flows Through The System
+
+This section is for non-technical readers.
+
+Think of Cecil like a person who has:
+
+- a baseline identity
+- a notebook
+- a filing cabinet
+- a pattern detector
+- a way to look things up before answering
+
+Here is the flow in plain English:
+
+### 1. Cecil starts with a seed
+
+When you onboard, you give Cecil a starting point.
+
+That seed is the original statement of identity. It is the "this is who I am supposed to be" layer.
+
+### 2. Conversations are captured after they happen
+
+When you chat with Cecil, the system does not try to rewrite its whole identity in the middle of every message.
+
+Instead, after the conversation:
+
+- the session is logged
+- memory records are written
+- embeddings are stored for later retrieval
+
+This keeps the live conversation fast and keeps memory capture clean.
+
+### 3. The observer looks for patterns
+
+After enough sessions, Cecil runs an observer pass.
+
+The observer asks questions like:
+
+- what themes keep repeating?
+- what changed?
+- what does behavior show that the seed did not?
+- where is there drift?
+
+That observer updates the evolving self-model.
+
+### 4. Long-form content adds depth
+
+Podcasts and interviews give Cecil more than just short chats.
+
+They give:
+
+- tone
+- recurring ideas
+- story arcs
+- factual details
+- examples of how someone actually thinks over time
+
+This makes the memory system much richer than onboarding alone.
+
+### 5. Facts are extracted into sharper memory
+
+Long transcript chunks are useful, but sometimes too broad.
+
+So Cecil also extracts smaller fact records such as:
+
+- relationships
+- places
+- work history
+- opinions
+- experiences
+- milestones
+
+That makes factual recall much more accurate.
+
+### 6. Memory is stored two ways
+
+Qdrant helps Cecil find semantically similar things.
+
+SQLite helps Cecil keep a structured memory state with provenance and history.
+
+The markdown files make everything inspectable by a human.
+
+So memory is not trapped inside one opaque system.
+
+### 7. Before answering, Cecil builds a memory window
+
+When you ask a question, Cecil does not dump all memory into the prompt.
+
+It tries to assemble:
+
+- the core identity files
+- the most relevant structured memory
+- the most relevant semantic hits
+- the most useful observations
+
+Then it compresses that into a ranked recall window.
+
+### 8. If needed, Cecil searches again
+
+If Cecil still does not have enough evidence to answer safely, it can explicitly trigger deep search.
+
+That means:
+
+- first pass: answer if enough context is already present
+- second pass: retrieve more evidence if needed
+
+This is how Cecil avoids pretending to remember things it does not actually have.
+
+### 9. The system gets better over time
+
+The important thing is that memory is not static.
+
+Cecil keeps accumulating:
+
+- conversations
+- observations
+- transcript knowledge
+- extracted facts
+- milestones
+- drift signals
+
+That is what makes it a protocol for persistent identity, not just a chat app with a history tab.
+
+## Quick Start
+
+### Requirements
+
+- Node.js 24 recommended
+- Docker for Qdrant
+- an OpenAI-compatible model endpoint
+
+### Install
+
+```bash
+npm install
+docker compose up -d
+```
+
+### Configure
+
+Create `.env` from `.env.example` and set your model endpoint values.
+
+At minimum, configure the LLM values used by `cecil/llm.ts`.
+
+### Run the Web App
+
+```bash
+npm run dev
+```
+
+Then open:
+
+```text
+http://localhost:3000
+```
+
+Complete onboarding first so Cecil has a seed identity.
+
+## What Working Looks Like
+
+When Cecil is working properly, you should be able to observe all of these:
+
+- onboarding creates `identity/seed.md`, `identity/narrative.md`, and `identity/delta.md`
+- chatting creates new files under `memory/conversations/`
+- `GET /api/memory` returns non-empty `current` and usually `events`
+- `GET /api/memory?query=...&includeWindow=true` returns a `recallWindow`
+- factual questions produce better answers after more chats, observations, and transcript ingest
+
+If those things are not happening, the system is not really "remembering" yet, even if the UI still responds.
+
+## Useful Commands
+
+```bash
+npm run dev
+npm run lint
+npm run discord
+npm run memory:inspect
+npm run memory:audit
+npm run memory:synthesize
+```
+
+## Memory Audit
+
+`npm run memory:audit` is the fastest way to check whether Cecil's memory layer is healthy.
+
+It reports:
+
+- total current records and event records
+- which memory types are actually present
+- which source pipelines are writing
+- stale memory types
+- low-quality records
+- duplicate current memories
+- optional ranked recall preview for a query
+
+This is the best command to run when Cecil feels blank, generic, or inconsistent and you want to know whether the problem is memory capture or answer generation.
+
+## Real Inspection Examples
+
+These are abbreviated examples of the actual shapes returned by the current build.
+
+### `GET /api/memory`
+
+```json
+{
+  "current": [
+    {
+      "memoryKey": "conversation:session-123:user-priorities",
+      "memoryType": "conversation",
+      "text": "John is focused on building Cecil into a persistent AI protocol.",
+      "sourceType": "conversation_session",
+      "qualityScore": 0.74,
+      "createdAt": "2026-03-06T20:11:00.000Z",
+      "updatedAt": "2026-03-06T20:11:00.000Z",
+      "provenance": {
+        "sessionId": "session-123"
+      }
+    }
+  ],
+  "events": [
+    {
+      "eventId": "obs-session-123-1",
+      "action": "capture",
+      "memoryKey": "observation:session-123:recurring-theme",
+      "memoryType": "observation",
+      "text": "Cecil observed a recurring theme around durable memory and identity.",
+      "sourceType": "observer_synthesis",
+      "qualityScore": 0.82,
+      "createdAt": "2026-03-06T20:13:00.000Z",
+      "updatedAt": "2026-03-06T20:13:00.000Z",
+      "provenance": {
+        "sessionId": "session-123"
+      }
+    }
+  ],
+  "ranked": [],
+  "recallWindow": null
+}
+```
+
+### `GET /api/memory?query=what+matters+to+john&includeWindow=true`
+
+```json
+{
+  "current": [],
+  "events": [],
+  "ranked": [
+    {
+      "memoryKey": "observation:podcast-identity:values",
+      "memoryType": "observation",
+      "text": "Public-corpus inference: In the public podcast corpus, John appears to value building things that feel original, useful, and ahead of the curve.",
+      "sourceType": "observer_synthesis",
+      "qualityScore": 0.93,
+      "recallScore": 5.2,
+      "lexicalHits": 2,
+      "createdAt": "2026-03-09T03:15:00.000Z",
+      "updatedAt": "2026-03-09T03:15:00.000Z",
+      "provenance": {
+        "observationKind": "identity",
+        "knowledgeScope": "public_corpus",
+        "epistemicStatus": "public_corpus_inference",
+        "confidenceBand": "high"
+      }
+    }
+  ],
+  "recallWindow": {
+    "formattedContext": "=== EVIDENCE GUIDE ===\nSEED_STATED = directly provided in onboarding/seed memory.\nPUBLIC_CORPUS_FACT = directly supported by stored public-corpus facts.\nPUBLIC_CORPUS_INFERENCE = synthesis from public material; useful, but not private certainty.\nPRIVATE_CONVERSATION = learned from direct private interaction.\nIf no tier gives solid support, answer that it is not known.\n\n=== OBSERVATIONS ===\n- [PUBLIC_CORPUS_INFERENCE | high_confidence | observation | podcast-identity | 2026-03-09T03:15:00.000Z] Public-corpus inference: In the public podcast corpus, John appears to value building things that feel original, useful, and ahead of the curve.",
+    "snippets": [
+      {
+        "memoryType": "observation",
+        "excerpt": "Public-corpus inference: In the public podcast corpus, John appears to value building things that feel original, useful, and ahead of the curve.",
+        "sourceLabel": "PUBLIC_CORPUS_INFERENCE | high_confidence | observation | podcast-identity | 2026-03-09T03:15:00.000Z",
+        "score": 5.2,
+        "source": "structured_candidate"
+      }
+    ]
+  }
+}
+```
+
+### `POST /api/chat`
+
+Request:
+
+```json
+{
+  "messages": [
+    { "role": "user", "content": "What do you remember about what matters to me?" }
+  ]
+}
+```
+
+Response shape:
+
+```json
+{
+  "message": "You have been focused on building Cecil into a real persistent memory protocol...",
+  "usedDeepSearch": false
+}
+```
+
+The exact response text will vary by model, but the important part is that the answer should start reflecting stored memory instead of only the current turn.
+
+## Troubleshooting
+
+### `/api/memory` is empty
+
+Usually this means one of these:
+
+- onboarding has not been completed yet
+- you have not had enough chats to generate memory writes
+- the observer has not run yet
+- you are looking in the wrong repo or wrong runtime directory
+
+### `current` has data but answers still feel generic
+
+That usually means:
+
+- the stored memories are too weak or too vague
+- the query does not match memory well enough yet
+- Qdrant is down, so semantic recall is weaker
+- the ranked recall window is returning too little useful context
+
+Check:
+
+- `GET /api/memory?query=your+question&includeWindow=true`
+
+If the recall window looks weak, the answer will usually look weak too.
+
+### `recallWindow` is `null`
+
+That is expected unless you pass both:
+
+- `query=...`
+- `includeWindow=true`
+
+### Deep search never seems to happen
+
+That can mean:
+
+- the first-pass prompt already had enough context
+- the model is not emitting `[SEARCH: ...]`
+- retrieval data is too thin to justify a second pass
+
+### Qdrant problems
+
+If Qdrant is not running, Cecil may still work partially, but recall quality will drop.
+
+Check:
+
+```bash
+docker compose up -d
+```
+
+Then verify the app and memory inspection routes again.
+
+### Memory Inspection Examples
+
+```bash
+npm run memory:inspect -- --limit=10
+npm run memory:inspect -- --types=fact,observation --limit=20
+npm run memory:inspect -- --query="What matters to John?" --window
+npm run memory:audit -- --limit=200
+npm run memory:audit -- --query="What matters to John?"
+```
+
+### API Inspection Examples
+
+```text
+GET /api/memory
+GET /api/memory?types=fact,observation
+GET /api/memory?query=ranked+recall&includeWindow=true
+GET /api/memory?includeAudit=true
+GET /api/memory?query=what+matters+to+john&includeAudit=true
+```
+
+## Ingesting Long-Form Content
+
+### Podcasts
+
+Transcribe:
+
+```bash
+python scripts/transcribe-podcasts.py
+```
+
+Then ingest:
+
+```bash
+curl -X POST http://localhost:3000/api/ingest-podcasts
+```
+
+### Interviews
+
+Put audio files in `podcasts/interviews/`, then:
+
+```bash
+python scripts/transcribe-interviews.py
+npx tsx scripts/ingest-interviews.ts
+```
+
+### Fact Extraction
+
+To extract smaller, more precise memory records from transcripts:
+
+```bash
+npx tsx scripts/extract-facts.ts
+```
+
+This writes:
+
+- fact vectors to Qdrant
+- fact logs to `memory/facts/`
+- structured fact records to SQLite
+- milestone records for meaningful experience/event facts
+
+To regenerate synthesized profile, identity, and relationship observations from the stored corpus:
+
+```bash
+npm run memory:synthesize
+```
+
+## Core API Routes
+
+- `POST /api/chat` - main chat endpoint
+- `POST /api/onboard` - create the seed identity
+- `POST /api/observe` - force observer processing for a session
+- `POST /api/ingest-podcasts` - ingest podcasts and synthesize
+- `GET /api/status` - onboarding state
+- `GET /api/memory` - inspect structured memory and recall window
 
 ## Project Structure
 
-```
+```text
+app/
+  api/
+    chat/
+    ingest-podcasts/
+    memory/
+    observe/
+    onboard/
+    status/
+
 cecil/
-  types.ts              — Shared types (MemoryType, SearchResult, etc.)
-  embedder.ts           — FastEmbed + Qdrant writes
-  retriever.ts          — Semantic search against Qdrant
-  deep-search.ts        — Active retrieval across all memory types (v1.1)
-  fact-extractor.ts     — LLM-based fact extraction from transcripts (v1.1)
-  observer.ts           — Post-session pattern detection + synthesis
-  meta.ts               — Identity window assembly + chat
-  llm.ts                — LLM wrapper (any OpenAI-compatible endpoint)
-  podcast-ingest.ts     — Podcast transcript ingestion
-  podcast-observer.ts   — Podcast-specific synthesis
+  deep-search.ts
+  embedder.ts
+  fact-extractor.ts
+  llm.ts
+  memory-store.ts
+  meta.ts
+  observer.ts
+  podcast-ingest.ts
+  podcast-observer.ts
+  ranked-recall.ts
+  recall-window.ts
+  response-pipeline.ts
+  retriever.ts
+  types.ts
 
 discord/
-  index.ts              — Discord bot entry point (message handler, deep search loop)
-  prompt.ts             — System prompt builder (includes deep search prompts)
-  history.ts            — Discord message history fetcher
-  session.ts            — Session management + observer integration
-  config.ts             — Bot configuration
+  index.ts
+  prompt.ts
+  session.ts
 
 onboarding/
-  questions.ts          — Seed questions (customizable)
-  seed-builder.ts       — Converts answers → seed.md + embeddings
-
-app/api/
-  chat/route.ts         — Chat endpoint
-  observe/route.ts      — Observer endpoint
-  onboard/route.ts      — Onboarding endpoint
-  status/route.ts       — Status check
-  ingest-podcasts/route.ts — Podcast ingestion + synthesis
+  questions.ts
+  seed-builder.ts
 
 scripts/
-  transcribe-podcasts.py    — Download + transcribe podcasts (faster-whisper/CUDA)
-  transcribe-interviews.py  — Transcribe local interview audio files (v1.1)
-  ingest-interviews.ts      — Ingest interview transcripts into Qdrant (v1.1)
-  extract-facts.ts          — Extract structured facts from all transcripts (v1.1)
-
-identity/               — User identity documents (gitignored)
-memory/                 — Human-readable memory mirror (gitignored)
+  extract-facts.ts
+  ingest-interviews.ts
+  inspect-memory.ts
+  transcribe-interviews.py
+  transcribe-podcasts.py
 ```
 
----
+## Design Direction
 
-## Design Principles
+This repo is not trying to be "chat history with embeddings."
 
-1. **Local first.** Qdrant runs locally. No cloud dependency for memory.
-2. **Bring your own model.** Any OpenAI-compatible LLM works. Local or cloud.
-3. **Markdown mirror.** Every memory has a human-readable version. Inspect, edit, delete.
-4. **Observer is post-session.** No LLM calls during conversation. Memory ops happen after.
-5. **Compression over accumulation.** The identity window is 20-50k tokens of signal, not your entire history.
-6. **The protocol is the product.** Cecil is infrastructure, not an app. Plug it into anything.
+The direction is:
 
----
+- identity first
+- memory quality over memory volume
+- observer-driven synthesis
+- provenance-aware storage
+- ranked recall before prompt injection
+- local inspectability
 
-## Disclaimer
+The point of Cecil is not just remembering text.
 
-Cecil is provided as-is with no warranty of any kind. This is experimental, open source infrastructure — not a hosted product. You are solely responsible for how you use it, what data you feed it, and what you do with the output. The authors and contributors are not liable for any damages, data loss, or unintended behavior arising from the use of this software. Use at your own risk.
+The point is giving a model a durable self, a memory substrate you can inspect, and a retrieval loop that improves over time.
 
----
+## Roadmap
+
+### v1.2
+
+This version establishes the current public Cecil foundation:
+
+- shared response pipeline
+- dual-store memory with Qdrant and SQLite
+- ranked recall with structured candidate scoring and dedupe
+- evidence-aware recall tiers
+- seed-profile observations
+- synthesized public-corpus identity and relationship observations
+- retireable synthesized memory
+- inspectable memory state through API and CLI
+
+### v1.3
+
+The next version should focus on broadening what kinds of knowledge Cecil can hold, not just tuning the same public-corpus path harder.
+
+That likely means:
+
+- a private reflection layer separate from public-corpus inference
+- stronger contradiction and drift checks across seed, public, and private memory
+- a broader evaluation suite for real recall behavior
+- better memory browsing and debugging tools
+- more explicit low-confidence handling in synthesis and answer generation
+
+### After That
+
+Once the recall layer is stronger, the protocol can push further into:
+
+- better observer quality
+- richer contradiction and drift detection
+- stronger memory tooling
+- multi-agent memory ecosystems built on top of the same protocol
+
+## Current Status
+
+This build now includes:
+
+- Qdrant plus SQLite dual-store memory
+- evidence-tiered recall
+- seed-profile observations
+- public-corpus identity and relationship synthesis
+- structured fact, milestone, and observation capture
+- merged recall window with dedupe and cleaner ranking
+- retireable synthesized memories
+- memory inspection API and CLI
+- Discord bot integration
+
+The next layer after this is expanding beyond public-corpus inference into private reflection and stronger longitudinal evaluation.
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE) for full text.
-
-Copyright 2026 Crash Override LLC
+Apache 2.0. See [LICENSE](LICENSE).

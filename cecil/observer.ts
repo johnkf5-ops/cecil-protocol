@@ -2,7 +2,8 @@ import fs from "fs/promises";
 import path from "path";
 import { chatCompletion } from "./llm";
 import { embed, embedBatch, initCollection } from "./embedder";
-import { search, getRecentByType } from "./retriever";
+import { recordMemoryWrite } from "./memory-store";
+import { getRecentByType } from "./retriever";
 import type { Message, SessionCounter } from "./types";
 
 const MEMORY_DIR = path.join(process.cwd(), "memory");
@@ -51,7 +52,7 @@ function formatConversationLog(messages: Message[], sessionId: string): string {
 async function lightPass(
   messages: Message[],
   sessionId: string
-): Promise<void> {
+): Promise<boolean> {
   await initCollection();
 
   const conversationDir = path.join(MEMORY_DIR, "conversations");
@@ -60,7 +61,19 @@ async function lightPass(
   // Write human-readable markdown log
   const log = formatConversationLog(messages, sessionId);
   const logPath = path.join(conversationDir, `${sessionId}.md`);
-  await fs.writeFile(logPath, log, "utf-8");
+  try {
+    await fs.writeFile(logPath, log, { encoding: "utf-8", flag: "wx" });
+  } catch (error: unknown) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "EEXIST"
+    ) {
+      return false;
+    }
+    throw error;
+  }
 
   // Embed the full conversation as one vector
   const fullText = messages.map((m) => `${m.role}: ${m.content}`).join("\n");
@@ -71,6 +84,35 @@ async function lightPass(
     timestamp: now,
     sessionId,
     sourcePath: `memory/conversations/${sessionId}.md`,
+    sourceType: "conversation_session",
+    sourceId: sessionId,
+    qualityScore: 0.65,
+    provenance: {
+      writer: "observer.light-pass",
+      granularity: "session",
+      messageCount: messages.length,
+      userMessageCount: messages.filter((m) => m.role === "user").length,
+    },
+  });
+
+  await recordMemoryWrite({
+    eventId: `conversation:${sessionId}:captured`,
+    memoryKey: `conversation:${sessionId}`,
+    memoryType: "conversation",
+    action: "capture",
+    text: fullText,
+    timestamp: now,
+    sessionId,
+    sourceType: "conversation_session",
+    sourcePath: `memory/conversations/${sessionId}.md`,
+    sourceId: sessionId,
+    qualityScore: 0.65,
+    provenance: {
+      writer: "observer.light-pass",
+      granularity: "session",
+      messageCount: messages.length,
+      userMessageCount: messages.filter((m) => m.role === "user").length,
+    },
   });
 
   // Also embed each user message individually for granular retrieval
@@ -83,10 +125,19 @@ async function lightPass(
           type: "conversation" as const,
           timestamp: now,
           sessionId,
+          sourceType: "conversation_session" as const,
+          sourceId: sessionId,
+          qualityScore: 0.55,
+          provenance: {
+            writer: "observer.light-pass",
+            granularity: "user-message",
+          },
         },
       }))
     );
   }
+
+  return true;
 }
 
 /**
@@ -185,6 +236,35 @@ Output ONLY the delta content in markdown. Start with "# Delta" as the heading.`
     timestamp: now,
     sessionId,
     sourcePath: `memory/observations/${sessionId}.md`,
+    sourceType: "observer_synthesis",
+    sourceId: sessionId,
+    qualityScore: 0.85,
+    provenance: {
+      writer: "observer.full-synthesis",
+      synthesisInterval: getSynthesisInterval(),
+      basedOnConversationCount: recentConversations.length,
+      basedOnObservationCount: recentObservations.length,
+    },
+  });
+
+  await recordMemoryWrite({
+    eventId: `observation:${sessionId}:captured`,
+    memoryKey: `observation:${sessionId}`,
+    memoryType: "observation",
+    action: "capture",
+    text: patterns,
+    timestamp: now,
+    sessionId,
+    sourceType: "observer_synthesis",
+    sourcePath: `memory/observations/${sessionId}.md`,
+    sourceId: sessionId,
+    qualityScore: 0.85,
+    provenance: {
+      writer: "observer.full-synthesis",
+      synthesisInterval: getSynthesisInterval(),
+      basedOnConversationCount: recentConversations.length,
+      basedOnObservationCount: recentObservations.length,
+    },
   });
 }
 
@@ -195,9 +275,12 @@ Output ONLY the delta content in markdown. Start with "# Delta" as the heading.`
 export async function observe(
   messages: Message[],
   sessionId: string
-): Promise<{ didSynthesize: boolean }> {
+): Promise<{ didSynthesize: boolean; alreadyObserved?: boolean }> {
   // Always: light pass (no LLM calls)
-  await lightPass(messages, sessionId);
+  const recorded = await lightPass(messages, sessionId);
+  if (!recorded) {
+    return { didSynthesize: false, alreadyObserved: true };
+  }
 
   // Increment session counter
   const counter = await getSessionCounter();

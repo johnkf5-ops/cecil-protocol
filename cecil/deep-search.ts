@@ -7,6 +7,22 @@ export interface DeepSearchResult {
   formattedContext: string;
 }
 
+function formatSource(result: SearchResult): string {
+  const parts: string[] = [result.metadata.type];
+
+  if (result.metadata.sourceEpisode) {
+    parts.push(result.metadata.sourceEpisode);
+  } else if (result.metadata.sourcePath) {
+    parts.push(result.metadata.sourcePath);
+  }
+
+  if (result.metadata.timestamp) {
+    parts.push(result.metadata.timestamp);
+  }
+
+  return parts.join(" | ");
+}
+
 /**
  * Execute a deep search across all memory types.
  * Searches podcast, fact, and observation vectors in parallel,
@@ -41,19 +57,24 @@ export async function deepSearch(query: string): Promise<DeepSearchResult> {
 
   if (facts.length > 0) {
     sections.push(
-      "**Extracted facts:**\n" + facts.map((r) => `- ${r.text}`).join("\n")
+      "**Extracted facts:**\n" +
+        facts.map((r) => `- [${formatSource(r)}] ${r.text}`).join("\n")
     );
   }
   if (podcasts.length > 0) {
     sections.push(
       "**Podcast excerpts:**\n" +
-        podcasts.map((r) => `- ${r.text.slice(0, 1000)}`).join("\n")
+        podcasts
+          .map((r) => `- [${formatSource(r)}] ${r.text.slice(0, 1000)}`)
+          .join("\n")
     );
   }
   if (observations.length > 0) {
     sections.push(
       "**Observations:**\n" +
-        observations.map((r) => `- ${r.text.slice(0, 500)}`).join("\n")
+        observations
+          .map((r) => `- [${formatSource(r)}] ${r.text.slice(0, 500)}`)
+          .join("\n")
     );
   }
 

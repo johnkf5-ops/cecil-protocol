@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { embed, embedBatch, initCollection } from "./embedder";
+import { recordMemoryWrite } from "./memory-store";
 import type { MemoryMetadata } from "./types";
 
 const TRANSCRIPT_DIR = path.join(process.cwd(), "podcasts", "transcripts");
@@ -113,6 +114,8 @@ async function writeMarkdownTranscript(transcript: Transcript): Promise<string> 
 async function ingestEpisode(transcript: Transcript): Promise<number> {
   const now = new Date().toISOString();
   let vectorCount = 0;
+  const sourceEpisode = `episode-${transcript.episodeNumber}: ${transcript.title}`;
+  const sourceId = `podcast-ep-${transcript.episodeNumber}`;
 
   // Write human-readable markdown
   const sourcePath = await writeMarkdownTranscript(transcript);
@@ -124,10 +127,43 @@ async function ingestEpisode(transcript: Transcript): Promise<number> {
   await embed(episodeLabel, {
     type: "podcast",
     timestamp: now,
-    sessionId: `podcast-ep-${transcript.episodeNumber}`,
+    sessionId: sourceId,
     sourcePath,
+    sourceType: "podcast_ingest",
+    sourceId,
+    sourceEpisode,
+    qualityScore: 0.72,
+    provenance: {
+      writer: "podcast-ingest.ingestEpisode",
+      granularity: "episode",
+      published: transcript.published,
+      durationMinutes: transcript.durationMinutes,
+      segmentCount: transcript.segments.length,
+    },
   });
   vectorCount++;
+
+  await recordMemoryWrite({
+    eventId: `${sourceId}:full:capture`,
+    memoryKey: `podcast:${sourceId}`,
+    memoryType: "podcast",
+    action: "upsert",
+    text: episodeLabel,
+    timestamp: now,
+    sessionId: sourceId,
+    sourceType: "podcast_ingest",
+    sourcePath,
+    sourceId,
+    sourceEpisode,
+    qualityScore: 0.72,
+    provenance: {
+      writer: "podcast-ingest.ingestEpisode",
+      granularity: "episode",
+      published: transcript.published,
+      durationMinutes: transcript.durationMinutes,
+      segmentCount: transcript.segments.length,
+    },
+  });
 
   // Chunk into ~10-minute segments and batch embed
   const chunks = chunkTranscript(transcript.segments);
@@ -137,12 +173,50 @@ async function ingestEpisode(transcript: Transcript): Promise<number> {
       metadata: {
         type: "podcast" as const,
         timestamp: now,
-        sessionId: `podcast-ep-${transcript.episodeNumber}-chunk-${i}`,
+        sessionId: `${sourceId}-chunk-${i}`,
         sourcePath,
+        sourceType: "podcast_ingest" as const,
+        sourceId: `${sourceId}-chunk-${i}`,
+        sourceEpisode,
+        qualityScore: 0.64,
+        provenance: {
+          writer: "podcast-ingest.ingestEpisode",
+          granularity: "chunk",
+          chunkIndex: i,
+          chunkStartSeconds: chunk.start,
+          chunkEndSeconds: chunk.end,
+          published: transcript.published,
+        },
       } satisfies MemoryMetadata,
     }));
 
     await embedBatch(items);
+    await Promise.all(
+      chunks.map((chunk, i) =>
+        recordMemoryWrite({
+          eventId: `${sourceId}:chunk:${i}:capture`,
+          memoryKey: `podcast:${sourceId}:chunk:${i}`,
+          memoryType: "podcast",
+          action: "upsert",
+          text: items[i].text,
+          timestamp: now,
+          sessionId: `${sourceId}-chunk-${i}`,
+          sourceType: "podcast_ingest",
+          sourcePath,
+          sourceId: `${sourceId}-chunk-${i}`,
+          sourceEpisode,
+          qualityScore: 0.64,
+          provenance: {
+            writer: "podcast-ingest.ingestEpisode",
+            granularity: "chunk",
+            chunkIndex: i,
+            chunkStartSeconds: chunk.start,
+            chunkEndSeconds: chunk.end,
+            published: transcript.published,
+          },
+        })
+      )
+    );
     vectorCount += items.length;
   }
 

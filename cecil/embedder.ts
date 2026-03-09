@@ -92,6 +92,15 @@ export async function embed(
   return id;
 }
 
+function toQdrantFilter(
+  filter: Record<string, unknown>
+): { key: string; match: { value: unknown } }[] {
+  return Object.entries(filter).map(([key, value]) => ({
+    key,
+    match: { value },
+  }));
+}
+
 export async function embedBatch(
   items: { text: string; metadata: MemoryMetadata }[]
 ): Promise<string[]> {
@@ -123,6 +132,18 @@ export async function embedBatch(
   });
 
   return ids;
+}
+
+export async function deletePointsByFilter(
+  filter: Record<string, unknown>
+): Promise<void> {
+  const client = getQdrantClient();
+
+  await client.delete(COLLECTION_NAME, {
+    filter: {
+      must: toQdrantFilter(filter),
+    },
+  });
 }
 
 export { embedText, COLLECTION_NAME };

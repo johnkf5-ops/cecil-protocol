@@ -53,6 +53,9 @@ yarn-error.log*
 /memory/facts/
 /memory/milestones/
 /memory/.session-counter.json
+/memory/*.sqlite
+/memory/*.sqlite-shm
+/memory/*.sqlite-wal
 /podcasts/
 
 # discord bot personality files (copied from openclaw)

@@ -1,13 +1,31 @@
-export type MemoryType = "conversation" | "observation" | "milestone" | "seed" | "podcast" | "fact";
+export type MemoryType =
+  | "conversation"
+  | "observation"
+  | "milestone"
+  | "seed"
+  | "podcast"
+  | "fact";
+
+export type MemorySourceType =
+  | "onboarding"
+  | "conversation_session"
+  | "observer_synthesis"
+  | "podcast_ingest"
+  | "fact_extraction"
+  | "unknown";
 
 export interface MemoryMetadata {
   type: MemoryType;
   timestamp: string;
   sessionId?: string;
   sourcePath?: string;
+  sourceType?: MemorySourceType;
+  sourceId?: string;
   sourceEpisode?: string;
   entities?: string[];
   category?: string;
+  qualityScore?: number;
+  provenance?: Record<string, unknown>;
 }
 
 export interface SearchResult {
