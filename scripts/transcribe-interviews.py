@@ -1,6 +1,6 @@
 """
 Transcribe interview podcast files (local MP3/M4A) for Cecil Protocol.
-Uses faster-whisper with CUDA on RTX 4090.
+Uses faster-whisper with CUDA.
 
 Usage:
   python scripts/transcribe-interviews.py

@@ -7,8 +7,8 @@ Usage:
   pip install faster-whisper requests feedparser
   python scripts/transcribe-podcasts.py
 
-Requires: NVIDIA GPU with CUDA (RTX 4090 recommended)
-Estimated time: ~15-20 minutes for 22 episodes
+Requires: NVIDIA GPU with CUDA
+Estimated time: ~1 minute per episode
 """
 
 import json

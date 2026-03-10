@@ -3,6 +3,30 @@ import path from "path";
 import { DatabaseSync } from "node:sqlite";
 import type { MemorySourceType, MemoryType } from "./types";
 
+let cachedSubjectName: string | null = null;
+let cachedSubjectTokens: string[] = [];
+
+async function loadSubjectName(): Promise<string> {
+  if (cachedSubjectName) return cachedSubjectName;
+  try {
+    const seedPath = path.join(process.cwd(), "identity", "seed.md");
+    const seed = await fs.readFile(seedPath, "utf-8");
+    const match = seed.match(/\*\*Name:\*\*\s*(.+)/i);
+    cachedSubjectName = match ? match[1].trim() : "the subject";
+  } catch {
+    cachedSubjectName = "the subject";
+  }
+  cachedSubjectTokens = cachedSubjectName
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t: string) => t.length >= 3);
+  return cachedSubjectName;
+}
+
+function getSubjectTokens(): string[] {
+  return cachedSubjectTokens;
+}
+
 const MEMORY_DIR = path.join(process.cwd(), "memory");
 export const STRUCTURED_MEMORY_DB_PATH = path.join(
   MEMORY_DIR,
@@ -306,29 +330,35 @@ const IDENTITY_FOCUS_TOKENS = new Set([
   "value",
   "values",
 ]);
-const IDENTITY_FOCUS_PHRASES = [
-  "matters to john",
-  "care about",
-  "cares about",
-  "important to john",
-  "what drives john",
-  "what john believes",
-  "what john cares about",
-  "what john thinks",
-];
+function getIdentityFocusPhrases(): string[] {
+  const tokens = getSubjectTokens();
+  const name = tokens.join(" ");
+  return [
+    `matters to ${name}`,
+    "care about",
+    "cares about",
+    `important to ${name}`,
+    `what drives ${name}`,
+    `what ${name} believes`,
+    `what ${name} cares about`,
+    `what ${name} thinks`,
+  ];
+}
 
 function normalizeForSearch(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function isIdentityValueQuery(normalizedQuery: string, tokens: string[]): boolean {
-  const hasJohnFocus = /\bjohn\b|\bknopf\b/.test(normalizedQuery);
+  const subjectTokens = getSubjectTokens();
+  const hasSubjectFocus = subjectTokens.length > 0 &&
+    subjectTokens.some((token) => new RegExp(`\\b${token}\\b`).test(normalizedQuery));
   const hasIdentityToken = tokens.some((token) => IDENTITY_FOCUS_TOKENS.has(token));
-  const hasIdentityPhrase = IDENTITY_FOCUS_PHRASES.some((phrase) =>
+  const hasIdentityPhrase = getIdentityFocusPhrases().some((phrase) =>
     normalizedQuery.includes(phrase)
   );
 
-  return hasJohnFocus && (hasIdentityToken || hasIdentityPhrase);
+  return hasSubjectFocus && (hasIdentityToken || hasIdentityPhrase);
 }
 
 function tokenizeQuery(query: string): string[] {
@@ -584,6 +614,7 @@ export async function getRankedRecallCandidates(
   options: StructuredMemoryQueryOptions = {}
 ): Promise<RankedRecallCandidate[]> {
   await initStructuredMemory();
+  await loadSubjectName();
 
   const db = getDatabase();
   const tokens = tokenizeQuery(query);
@@ -681,10 +712,12 @@ export async function getRankedRecallCandidates(
         typeof record.provenance.facet === "string"
           ? record.provenance.facet.toLowerCase()
           : "";
-      const hasJohnSubject =
-        /\bjohn knopf\b/.test(normalizedText) ||
-        entities.some((entity) => entity.includes("john knopf")) ||
-        provenanceSubjectName.includes("john knopf");
+      const subjectName = cachedSubjectName?.toLowerCase() ?? "";
+      const sTokens = getSubjectTokens();
+      const hasSubjectMatch =
+        (subjectName && normalizedText.includes(subjectName)) ||
+        sTokens.some((token) => entities.some((entity) => entity.includes(token))) ||
+        sTokens.some((token) => provenanceSubjectName.includes(token));
       const querySubjectTokens = tokens.filter(
         (token) => !VALUE_INTENT_TOKENS.has(token)
       );
@@ -696,7 +729,7 @@ export async function getRankedRecallCandidates(
                 entities.some((entity) => entity.includes(token)) ||
                 provenanceSubjectName.includes(token)
             )
-          : hasJohnSubject;
+          : hasSubjectMatch;
       const isIdentityObservation =
         record.memoryType === "observation" &&
         IDENTITY_OBSERVATION_FACETS.has(identityFacet);
@@ -709,12 +742,10 @@ export async function getRankedRecallCandidates(
         /\bguest\b|\bhe\b|\bshe\b|\bthey\b/.test(normalizedText) ||
         entities.some(
           (entity) =>
-            !entity.includes("john knopf") &&
-            !entity.includes("john") &&
-            !entity.includes("knopf")
+            !sTokens.some((t) => entity.includes(t))
         );
       const subjectOnlyMatch =
-        lexicalHits > 0 && matchedTokens.every((token) => token === "john" || token === "knopf");
+        lexicalHits > 0 && matchedTokens.every((token) => sTokens.includes(token));
 
       let recallScore = lexicalScore + record.qualityScore;
 
@@ -728,7 +759,7 @@ export async function getRankedRecallCandidates(
         recallScore += 0.45;
       }
 
-      if (identityValueQuery && hasJohnSubject && hasValueLanguage) {
+      if (identityValueQuery && hasSubjectMatch && hasValueLanguage) {
         recallScore += 1.2;
       }
 
@@ -766,11 +797,11 @@ export async function getRankedRecallCandidates(
         recallScore -= 1.2;
       }
 
-      if (identityValueQuery && OPINION_CATEGORIES.has(category) && hasJohnSubject) {
+      if (identityValueQuery && OPINION_CATEGORIES.has(category) && hasSubjectMatch) {
         recallScore += 0.8;
       }
 
-      if (identityValueQuery && mentionsOtherPrimarySubject && !hasJohnSubject) {
+      if (identityValueQuery && mentionsOtherPrimarySubject && !hasSubjectMatch) {
         recallScore -= 1.1;
       }
 

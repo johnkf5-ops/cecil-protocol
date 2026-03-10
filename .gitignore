@@ -58,7 +58,7 @@ yarn-error.log*
 /memory/*.sqlite-wal
 /podcasts/
 
-# discord bot personality files (copied from openclaw)
+# discord bot personality files (user-specific)
 /discord/personality/
 
 # session handoff notes

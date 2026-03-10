@@ -1,6 +1,7 @@
 /**
- * Extract structured facts from diarized podcast transcripts (episodes 1-21 only).
+ * Extract structured facts from diarized podcast transcripts.
  * Reads from podcasts/transcripts-diarized/ and formats text with [HOST]/[GUEST] prefixes.
+ * Automatically discovers all episode-*.json files in the diarized directory.
  *
  * Usage: npx tsx scripts/extract-diarized-facts.ts
  *
@@ -8,7 +9,7 @@
  *   1. Run diarize-episodes.py first to create diarized transcripts
  *   2. Run delete-episode-facts.ts to clear old facts from Qdrant
  *   3. Qdrant running at localhost:6333
- *   4. LM Studio running with Qwen 3.5 (thinking OFF, 32K context, 1 slot)
+ *   4. LLM server running (see LLM_BASE_URL in .env)
  */
 
 import fs from "fs/promises";
@@ -226,18 +227,15 @@ async function processTranscriptFile(
 async function main() {
   await initCollection();
 
-  // Only process episodes 1-21 (diarized Unfiltered episodes)
-  const files: string[] = [];
-  for (let ep = 1; ep <= 21; ep++) {
-    const filename = `episode-${ep}.json`;
-    const filePath = path.join(DIARIZED_TRANSCRIPT_DIR, filename);
-    try {
-      await fs.access(filePath);
-      files.push(filename);
-    } catch {
-      console.warn(`Missing diarized transcript: ${filename}`);
-    }
-  }
+  // Discover all diarized episode transcripts
+  const allFiles = await fs.readdir(DIARIZED_TRANSCRIPT_DIR).catch(() => [] as string[]);
+  const files = allFiles
+    .filter((f) => /^episode-\d+\.json$/.test(f))
+    .sort((a, b) => {
+      const numA = parseInt(a.match(/\d+/)![0], 10);
+      const numB = parseInt(b.match(/\d+/)![0], 10);
+      return numA - numB;
+    });
 
   if (files.length === 0) {
     console.error("No diarized transcripts found in", DIARIZED_TRANSCRIPT_DIR);

@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { assembleIdentityWindow } from "../cecil/meta";
-import { MAX_TOKENS } from "./config";
+import { MAX_TOKENS, AGENT_IDS } from "./config";
 import { MeetingState } from "./meeting";
 
 const PERSONALITY_DIR = path.join(process.cwd(), "discord", "personality");
@@ -47,7 +47,7 @@ export async function buildSystemPrompt(
       ``,
       `CRITICAL RULES:`,
       `- The system handles ALL agent routing. You MUST NOT tag, @mention, or address any agent by name.`,
-      `- FORBIDDEN: Writing any agent name (Riley, Jules, Ava, Eli, Nadia, Kai) in your response. Never say "Riley nailed it" or "Nadia, draft the spec." Refer to input as "the intel," "the previous point," "the legal review," etc.`,
+      `- FORBIDDEN: Writing any agent name (${Object.keys(AGENT_IDS).join(", ")}) in your response. Refer to input as "the intel," "the previous point," "the legal review," etc.`,
       `- FORBIDDEN: Using <@ syntax anywhere in your response. The system appends tags automatically.`,
       `- FORBIDDEN: Giving instructions to agents (e.g. "draft the spec" or "stand by to build"). You summarize and ask questions — the system handles routing.`,
       `- Synthesize the previous input (1-2 sentences), then ask a specific question for the next topic area.`,
@@ -57,7 +57,7 @@ export async function buildSystemPrompt(
 
     if (meetingState.closingRound) {
       meetingLines.push(
-        `- CLOSING ROUND: Summarize the entire discussion. Write a spec outline. This gets posted for John's approval.`
+        `- CLOSING ROUND: Summarize the entire discussion. Write a spec outline. This gets posted for the user's approval.`
       );
     } else if (meetingState.round >= 2) {
       meetingLines.push(`- Start converging. Focus on actionable decisions.`);
@@ -76,7 +76,7 @@ export async function buildSystemPrompt(
 
   if (!meetingState?.active) {
     constraints.push(
-      `- NEVER mention agent names (riley, jules, ava, eli, nadia, kai) in your responses. You are in brain twin mode — it's just you and John. Mentioning their names triggers them to respond and causes chaos.`
+      `- NEVER mention agent names (${Object.keys(AGENT_IDS).join(", ")}) in your responses. You are in brain twin mode — it's just you and the user. Mentioning their names triggers them to respond and causes chaos.`
     );
   }
 
@@ -85,7 +85,7 @@ export async function buildSystemPrompt(
       `- DEEP SEARCH: If the user asks a specific factual question about their past, their podcasts, interviews, personal details, or anything you're not confident about from your memory above, output ONLY the text [SEARCH: your search query] as your entire response. Use a keyword-rich query that targets the specific information needed. Examples:`,
       `  - "Do I have a wife?" → [SEARCH: wife family partner spouse daughters personal life]`,
       `  - "What did I say about AI?" → [SEARCH: opinions AI artificial intelligence future]`,
-      `  - "When did I start photography?" → [SEARCH: photography career beginning early start]`,
+      `  - "When did I get into this?" → [SEARCH: origin story career beginning early start]`,
       `  Do NOT search for things you already know from your memory context above. Only search when you genuinely need more information.`
     );
   }

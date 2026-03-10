@@ -11,13 +11,21 @@ export const MAX_TOKENS = 1000;
 export const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 export const MEETING_DELAY_MS = 10000; // 10s pause between meeting turns
 
-// Agent Discord bot IDs — derived from token first segment (base64 of bot ID)
+// Agent Discord bot IDs — parsed from DISCORD_AGENTS env var
+// Format: JSON object {"agent_name": "discord_bot_id", ...}
 // Used for real @mentions in meeting mode so mentionPatterns aren't needed
-export const AGENT_IDS: Record<string, string> = {
-  riley: "1476442097010741248",
-  jules: "1476447016858157148",
-  ava: "1476447624532857030",
-  eli: "1476448204609556584",
-  nadia: "1476449334596993106",
-  kai: "1476449837179469894",
-};
+export const AGENT_IDS: Record<string, string> = process.env.DISCORD_AGENTS
+  ? JSON.parse(process.env.DISCORD_AGENTS)
+  : {};
+
+// Meeting agent order — comma-separated agent names from DISCORD_AGENTS keys
+// These agents are called in order during meeting rounds
+export const MEETING_AGENT_ORDER: string[] = process.env.MEETING_AGENT_ORDER
+  ? process.env.MEETING_AGENT_ORDER.split(",").map((s) => s.trim()).filter(Boolean)
+  : Object.keys(AGENT_IDS);
+
+// Spec agent — receives !approve handoff in #specs
+export const SPEC_AGENT = process.env.SPEC_AGENT || "";
+
+// Build agent — tagged by the spec agent relay after spec is written
+export const BUILD_AGENT = process.env.BUILD_AGENT || "";

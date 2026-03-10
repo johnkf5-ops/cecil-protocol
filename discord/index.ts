@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits, TextChannel, Events } from "discord.js";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
-import { DISCORD_TOKEN, WAR_ROOM_ID, SPECS_CHANNEL_ID, MAX_TOKENS, BOT_NAME, MEETING_DELAY_MS, AGENT_IDS } from "./config";
+import { DISCORD_TOKEN, WAR_ROOM_ID, SPECS_CHANNEL_ID, MAX_TOKENS, BOT_NAME, MEETING_DELAY_MS, AGENT_IDS, MEETING_AGENT_ORDER, SPEC_AGENT } from "./config";
 import { fetchHistory } from "./history";
 import { buildSystemPrompt, buildDeepSearchPrompt } from "./prompt";
 import { onResponse } from "./session";
@@ -306,15 +306,15 @@ client.on(Events.MessageCreate, (message) => {
       "`!wrap` — Trigger closing round early",
       "`!stop` — Hard stop the meeting immediately",
       "`!status` — Show current meeting state",
-      "`!approve` — Approve and hand off to Nadia in #specs",
+      "`!approve` — Approve and hand off to the spec agent in #specs",
       "`!deepsearch` — Toggle deep search on/off (currently **" + (deepSearchEnabled ? "ON" : "OFF") + "**)",
       "`!clear [n]` — Delete last n messages (default 100)",
       "`!readfile <path>` — Share a file's contents in chat",
       "`!help` — This message",
       "",
       "**Meeting Flow**",
-      "Riley (intel) → Jules (ideas) → Ava (UX) → Eli (legal) → Nadia (spec) — 3 rounds, then wrap-up.",
-      "After wrap-up, `!approve` hands off to Nadia in #specs. Nadia writes the spec and tags Kai to build.",
+      MEETING_AGENT_ORDER.join(" → ") + " — 3 rounds, then wrap-up.",
+      "After wrap-up, `!approve` hands off to the spec agent in #specs.",
     ].join("\n");
     channel.send(helpText);
     return;
@@ -373,7 +373,7 @@ client.on(Events.MessageCreate, (message) => {
     console.log("[bot] Meeting: closing round triggered by !wrap");
 
     queue.push(async () => {
-      await handleLLMResponse(channel, "!wrap — John wants to wrap up. Post your summary and spec outline now.", false, message.author.displayName, null);
+      await handleLLMResponse(channel, "!wrap — the user wants to wrap up. Post your summary and spec outline now.", false, message.author.displayName, null);
     });
     drainQueue();
     return;
@@ -410,7 +410,7 @@ client.on(Events.MessageCreate, (message) => {
     return;
   }
 
-  // --- !approve (hand off to Nadia in #specs, end meeting) ---
+  // --- !approve (hand off to spec agent in #specs, end meeting) ---
   if (APPROVE_RE.test(message.content) && !message.author.bot) {
     console.log("[bot] !approve triggered");
     if (!meeting?.active) {
@@ -419,9 +419,9 @@ client.on(Events.MessageCreate, (message) => {
     }
 
     const topic = meeting.topic;
-    console.log("[bot] Spec approved by John — handing off to Nadia");
+    console.log("[bot] Spec approved — handing off to spec agent");
 
-    // Post handoff to #specs tagging Nadia
+    // Post handoff to #specs tagging spec agent
     queue.push(async () => {
       try {
         if (!SPECS_CHANNEL_ID) {
@@ -432,13 +432,13 @@ client.on(Events.MessageCreate, (message) => {
 
         const specsChannel = await client.channels.fetch(SPECS_CHANNEL_ID) as TextChannel;
 
-        // Build a brief meeting summary for Nadia's context
+        // Build a brief meeting summary for the spec agent's context
         await channel.sendTyping();
         const history = await fetchHistory(channel, client.user!.id, true);
         while (history.length && history[history.length - 1].role === "assistant") {
           history.pop();
         }
-        history.push({ role: "user", content: `John approved. Write a 3-4 bullet summary of what the team decided during the meeting on "${topic}". Just the key decisions and requirements — Nadia will use this to write the full spec.` });
+        history.push({ role: "user", content: `Approved. Write a 3-4 bullet summary of what the team decided during the meeting on "${topic}". Just the key decisions and requirements — the spec agent will use this to write the full spec.` });
 
         // Re-merge to guarantee alternation
         for (let i = history.length - 1; i > 0; i--) {
@@ -460,15 +460,16 @@ client.on(Events.MessageCreate, (message) => {
         summary = summary.replace(/\[SEARCH:\s*.+?\]/g, "").trim();
         summary = summary.replace(/<@!?\d+>/g, "").replace(/<@[^>]*>/g, "").trim();
 
-        const nadiaId = AGENT_IDS["nadia"];
+        const specAgentId = AGENT_IDS[SPEC_AGENT];
+        const specTag = specAgentId ? `<@${specAgentId}>` : "";
         const handoff = summary
-          ? `**APPROVED — ${topic}**\n\n${summary}\n\n<@${nadiaId}> — write the full spec.`
-          : `**APPROVED — ${topic}**\n\nWrite the full spec based on the war-room discussion.\n\n<@${nadiaId}>`;
+          ? `**APPROVED — ${topic}**\n\n${summary}\n\n${specTag} — write the full spec.`
+          : `**APPROVED — ${topic}**\n\nWrite the full spec based on the war-room discussion.\n\n${specTag}`;
 
         await specsChannel.send(handoff.slice(0, 2000));
-        console.log(`[bot] Handoff posted to #specs tagging Nadia (${handoff.length} chars)`);
+        console.log(`[bot] Handoff posted to #specs tagging ${SPEC_AGENT} (${handoff.length} chars)`);
 
-        await channel.send(`Meeting closed — handed off to Nadia in #specs.`);
+        await channel.send(`Meeting closed — handed off to ${SPEC_AGENT} in #specs.`);
 
         // #specs relay is always active — no need to arm it
       } catch (err) {
@@ -476,9 +477,10 @@ client.on(Events.MessageCreate, (message) => {
         // Fallback: post minimal handoff
         try {
           const specsChannel = await client.channels.fetch(SPECS_CHANNEL_ID) as TextChannel;
-          const nadiaId = AGENT_IDS["nadia"];
-          await specsChannel.send(`**APPROVED — ${topic}**\n\nWrite the full spec based on the war-room discussion.\n\n<@${nadiaId}>`);
-          await channel.send("Meeting closed — handed off to Nadia in #specs.");
+          const fallbackSpecId = AGENT_IDS[SPEC_AGENT];
+          const fallbackTag = fallbackSpecId ? `<@${fallbackSpecId}>` : "";
+          await specsChannel.send(`**APPROVED — ${topic}**\n\nWrite the full spec based on the war-room discussion.\n\n${fallbackTag}`);
+          await channel.send(`Meeting closed — handed off to ${SPEC_AGENT} in #specs.`);
           // #specs relay is always active — no need to arm it
         } catch {
           await channel.send("Meeting closed. Could not post to #specs — hand off manually.");
@@ -500,7 +502,7 @@ client.on(Events.MessageCreate, (message) => {
     );
 
     queue.push(async () => {
-      // Deliberate pause — prevents cascade, gives John time to !stop/!wrap
+      // Deliberate pause — prevents cascade, gives the user time to !stop/!wrap
       console.log(`[bot] Meeting: waiting ${MEETING_DELAY_MS}ms before responding...`);
       await new Promise((r) => setTimeout(r, MEETING_DELAY_MS));
 

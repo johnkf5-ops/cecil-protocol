@@ -26,16 +26,6 @@ const FACT_CATEGORY_PRIORITY: Record<string, number> = {
 
 const NON_PERSON_ENTITIES = new Set([
   "ai",
-  "austin",
-  "las vegas",
-  "los angeles",
-  "national geographic",
-  "new york",
-  "nfts",
-  "opensea",
-  "phase one",
-  "rocks",
-  "stonehenge",
   "twitter",
   "x",
 ]);
@@ -75,10 +65,10 @@ Rules:
 - The sentence must explicitly name both the primary subject and the target person.
 - Focus on the relationship, dynamic, or role the target person plays in the primary subject's world.
 - Prefer durable patterns over one-off anecdotes.
-- Make the sentence retrieval-friendly for prompts like "What is John's relationship with X?" and "Who are important people in John's world?"
+- Make the sentence retrieval-friendly for prompts like "What is the subject's relationship with X?" and "Who are important people in the subject's world?"
 - Do not just summarize the target person's biography.
 - Treat every output as an inference from public podcast material, not private truth.
-- Prefer wording like "In the public podcast corpus, John's relationship with X appears to..."
+- Prefer wording like "In the public podcast corpus, the subject's relationship with X appears to..."
 - Keep evidence snippets short.
 - If the evidence is too weak, return the requested person with an empty text field and an empty evidence array.`;
 

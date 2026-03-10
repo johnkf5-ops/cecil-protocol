@@ -1,6 +1,6 @@
 /**
  * Extract structured facts from all podcast transcripts and embed into Qdrant.
- * Processes both Unfiltered episodes and interview transcripts.
+ * Processes both episode transcripts and interview transcripts.
  *
  * Usage: npx tsx scripts/extract-facts.ts
  */

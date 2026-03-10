@@ -403,7 +403,7 @@ You should see current memory state and recent memory events.
 Ask the memory API for a ranked recall window:
 
 ```text
-GET /api/memory?query=what+matters+to+john&includeWindow=true
+GET /api/memory?query=what+matters+to+me&includeWindow=true
 ```
 
 This shows the merged memory context Cecil is preparing before answering.
@@ -443,7 +443,7 @@ This creates smaller, sharper factual memory records and milestone records.
 Run the memory inspector one more time:
 
 ```bash
-npm run memory:inspect -- --query="What matters to John?" --window
+npm run memory:inspect -- --query="What matters to me?" --window
 ```
 
 At that point you can see the difference between:
@@ -664,7 +664,7 @@ These are abbreviated examples of the actual shapes returned by the current buil
     {
       "memoryKey": "conversation:session-123:user-priorities",
       "memoryType": "conversation",
-      "text": "John is focused on building Cecil into a persistent AI protocol.",
+      "text": "<username> is focused on building Cecil into a persistent AI protocol.",
       "sourceType": "conversation_session",
       "qualityScore": 0.74,
       "createdAt": "2026-03-06T20:11:00.000Z",
@@ -695,7 +695,7 @@ These are abbreviated examples of the actual shapes returned by the current buil
 }
 ```
 
-### `GET /api/memory?query=what+matters+to+john&includeWindow=true`
+### `GET /api/memory?query=what+matters+to+me&includeWindow=true`
 
 ```json
 {
@@ -705,7 +705,7 @@ These are abbreviated examples of the actual shapes returned by the current buil
     {
       "memoryKey": "observation:podcast-identity:values",
       "memoryType": "observation",
-      "text": "Public-corpus inference: In the public podcast corpus, John appears to value building things that feel original, useful, and ahead of the curve.",
+      "text": "Public-corpus inference: In the public podcast corpus, <username> appears to value building things that feel original, useful, and ahead of the curve.",
       "sourceType": "observer_synthesis",
       "qualityScore": 0.93,
       "recallScore": 5.2,
@@ -721,11 +721,11 @@ These are abbreviated examples of the actual shapes returned by the current buil
     }
   ],
   "recallWindow": {
-    "formattedContext": "=== EVIDENCE GUIDE ===\nSEED_STATED = directly provided in onboarding/seed memory.\nPUBLIC_CORPUS_FACT = directly supported by stored public-corpus facts.\nPUBLIC_CORPUS_INFERENCE = synthesis from public material; useful, but not private certainty.\nPRIVATE_CONVERSATION = learned from direct private interaction.\nIf no tier gives solid support, answer that it is not known.\n\n=== OBSERVATIONS ===\n- [PUBLIC_CORPUS_INFERENCE | high_confidence | observation | podcast-identity | 2026-03-09T03:15:00.000Z] Public-corpus inference: In the public podcast corpus, John appears to value building things that feel original, useful, and ahead of the curve.",
+    "formattedContext": "=== EVIDENCE GUIDE ===\nSEED_STATED = directly provided in onboarding/seed memory.\nPUBLIC_CORPUS_FACT = directly supported by stored public-corpus facts.\nPUBLIC_CORPUS_INFERENCE = synthesis from public material; useful, but not private certainty.\nPRIVATE_CONVERSATION = learned from direct private interaction.\nIf no tier gives solid support, answer that it is not known.\n\n=== OBSERVATIONS ===\n- [PUBLIC_CORPUS_INFERENCE | high_confidence | observation | podcast-identity | 2026-03-09T03:15:00.000Z] Public-corpus inference: In the public podcast corpus, <username> appears to value building things that feel original, useful, and ahead of the curve.",
     "snippets": [
       {
         "memoryType": "observation",
-        "excerpt": "Public-corpus inference: In the public podcast corpus, John appears to value building things that feel original, useful, and ahead of the curve.",
+        "excerpt": "Public-corpus inference: In the public podcast corpus, <username> appears to value building things that feel original, useful, and ahead of the curve.",
         "sourceLabel": "PUBLIC_CORPUS_INFERENCE | high_confidence | observation | podcast-identity | 2026-03-09T03:15:00.000Z",
         "score": 5.2,
         "source": "structured_candidate"
@@ -816,9 +816,9 @@ Then verify the app and memory inspection routes again.
 ```bash
 npm run memory:inspect -- --limit=10
 npm run memory:inspect -- --types=fact,observation --limit=20
-npm run memory:inspect -- --query="What matters to John?" --window
+npm run memory:inspect -- --query="What matters to me?" --window
 npm run memory:audit -- --limit=200
-npm run memory:audit -- --query="What matters to John?"
+npm run memory:audit -- --query="What matters to me?"
 ```
 
 ### API Inspection Examples
@@ -828,7 +828,7 @@ GET /api/memory
 GET /api/memory?types=fact,observation
 GET /api/memory?query=ranked+recall&includeWindow=true
 GET /api/memory?includeAudit=true
-GET /api/memory?query=what+matters+to+john&includeAudit=true
+GET /api/memory?query=what+matters+to+me&includeAudit=true
 ```
 
 ## Ingesting Long-Form Content

@@ -120,7 +120,7 @@ Rules:
 - Prefer to include values, priorities, beliefs, and working_style before optional facets.
 - Every text sentence must explicitly name the primary subject.
 - Treat every output as an inference from public podcast material, not private truth.
-- Prefer wording like "In the public podcast corpus, John appears to..."
+- Prefer wording like "In the public podcast corpus, <subject name> appears to..."
 - Prefer durable patterns over one-off anecdotes.
 - Ground every item in the provided facts and patterns. Do not invent.
 - Use direct wording that will be useful for later retrieval.
@@ -137,7 +137,7 @@ Rules:
 - The "facet" field must exactly match the requested facet.
 - The text must be one sentence and explicitly name the primary subject.
 - Treat the answer as an inference from public podcast material, not private truth.
-- Prefer wording like "In the public podcast corpus, John appears to..."
+- Prefer wording like "In the public podcast corpus, <subject name> appears to..."
 - Ground the answer in the provided facts and patterns only.
 - Prefer durable signal over one-off anecdotes.
 - Keep evidence snippets short.

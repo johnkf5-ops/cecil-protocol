@@ -46,12 +46,13 @@ function isExtractedFact(value: unknown): value is ExtractedFact {
   );
 }
 
-const DIARIZED_EXTRACTION_PROMPT = `You are a fact extraction module. Given a diarized transcript excerpt, extract factual statements. Each line is prefixed with [HOST] or [GUEST].
+function buildDiarizedExtractionPrompt(hostName: string): string {
+  return `You are a fact extraction module. Given a diarized transcript excerpt, extract factual statements. Each line is prefixed with [HOST] or [GUEST].
 
 CRITICAL RULE — speaker attribution:
-- [HOST] lines are spoken by John Knopf. Attribute these facts to "John Knopf".
+- [HOST] lines are spoken by ${hostName}. Attribute these facts to "${hostName}".
 - [GUEST] lines are spoken by the guest (their name is in the episode title). Attribute these facts to the guest BY NAME.
-- NEVER attribute a [GUEST] statement to John Knopf. NEVER attribute a [HOST] statement to the guest.
+- NEVER attribute a [GUEST] statement to ${hostName}. NEVER attribute a [HOST] statement to the guest.
 
 Extract facts from BOTH speakers. Focus on:
 - Personal facts (family, relationships, age, location, background)
@@ -62,7 +63,7 @@ Extract facts from BOTH speakers. Focus on:
 
 Rules:
 - Each fact must be a single, self-contained sentence
-- Use the person's actual name — "John Knopf" for [HOST] facts, the guest's real name for [GUEST] facts
+- Use the person's actual name — "${hostName}" for [HOST] facts, the guest's real name for [GUEST] facts
 - Never use "he", "she", "the host", "the guest", or "the speaker"
 - Be specific — include dates, names, places when available
 - Ignore filler, pleasantries, and off-topic tangents
@@ -70,6 +71,7 @@ Rules:
 - Output as a JSON array: [{"fact": "...", "entities": ["name1", "name2"], "category": "personal|career|opinion|experience|preference"}]
 
 Output ONLY the JSON array. No other text.`;
+}
 
 /**
  * Extract facts from a transcript chunk using the LLM.
@@ -116,14 +118,15 @@ export async function extractFacts(
 
 /**
  * Extract facts from a diarized transcript chunk (with [HOST]/[GUEST] prefixes).
- * Uses a host-aware prompt that prioritizes John Knopf's facts.
+ * Uses a host-aware prompt that attributes facts to the named host.
  */
 export async function extractFactsDiarized(
   chunkText: string,
-  episodeTitle: string
+  episodeTitle: string,
+  hostName: string = "the host"
 ): Promise<ExtractedFact[]> {
   const response = await chatCompletion({
-    system: DIARIZED_EXTRACTION_PROMPT,
+    system: buildDiarizedExtractionPrompt(hostName),
     messages: [
       {
         role: "user",

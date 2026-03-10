@@ -1,7 +1,9 @@
 """
-Speaker Diarization Pipeline for Unfiltered Podcast Episodes 1-21.
+Speaker Diarization Pipeline for podcast episodes.
 Uses pyannote.audio to identify host vs guest, then merges speaker labels
 onto existing faster-whisper transcripts.
+
+Automatically discovers all episode-*.mp3 files in the podcasts/ directory.
 
 Output: podcasts/transcripts-diarized/episode-{N}.json
 
@@ -11,7 +13,7 @@ Usage:
   python scripts/diarize-episodes.py
 
 Requires:
-  - NVIDIA GPU with CUDA (RTX 4090 recommended)
+  - NVIDIA GPU with CUDA
   - HuggingFace token with access to pyannote/speaker-diarization-3.1
   - Set HF_TOKEN env var or run huggingface-cli login
 """
@@ -39,12 +41,12 @@ TRANSCRIPT_DIR = PODCAST_DIR / "transcripts"
 DIARIZED_DIR = PODCAST_DIR / "transcripts-diarized"
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
-NUM_SPEAKERS = 2  # All Unfiltered episodes are 2-speaker (host + guest)
+NUM_SPEAKERS = 2  # Default: 2-speaker episodes (host + guest)
 
 
 def identify_host(diarization, max_time: float = 120.0) -> str | None:
     """Identify the host by who speaks more in the first 2 minutes.
-    John always opens the show with an intro."""
+    The host always opens the show with an intro."""
     speaker_time: dict[str, float] = {}
 
     for turn, _, speaker in diarization.itertracks(yield_label=True):
@@ -204,7 +206,7 @@ def main():
         print("  1. Accept license: https://huggingface.co/pyannote/speaker-diarization-3.1")
         print("  2. Accept license: https://huggingface.co/pyannote/segmentation-3.0")
         print("  3. Create token: https://huggingface.co/settings/tokens")
-        print("  4. Add HF_TOKEN=hf_xxxxx to E:\\echo_protocol\\.env")
+        print("  4. Add HF_TOKEN=hf_xxxxx to your .env file")
         sys.exit(1)
 
     DIARIZED_DIR.mkdir(parents=True, exist_ok=True)
@@ -226,17 +228,28 @@ def main():
     pipeline.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     print("Pipeline loaded.\n")
 
-    # Process all 21 episodes
+    # Discover all episode MP3s
+    episode_nums = sorted(
+        int(p.stem.split("-")[1])
+        for p in PODCAST_DIR.glob("episode-*-*.mp3")
+        if p.stem.split("-")[1].isdigit()
+    )
+
+    if not episode_nums:
+        print("No episode MP3s found in", PODCAST_DIR)
+        sys.exit(1)
+
+    total_episodes = len(episode_nums)
     print(f"{'=' * 60}")
-    print(f"Diarizing Unfiltered Episodes 1-21")
+    print(f"Diarizing {total_episodes} episodes")
     print(f"{'=' * 60}\n")
 
     total_start = time.time()
     success = 0
     failed = 0
 
-    for ep_num in range(1, 22):
-        print(f"[{ep_num}/21] Episode {ep_num}")
+    for idx, ep_num in enumerate(episode_nums, 1):
+        print(f"[{idx}/{total_episodes}] Episode {ep_num}")
         if process_episode(pipeline, ep_num):
             success += 1
         else:

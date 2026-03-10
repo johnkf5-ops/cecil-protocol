@@ -1,10 +1,10 @@
 /**
  * Thin wrapper for OpenAI-compatible chat completions.
- * Points at LM Studio by default.
+ * Points at a local OpenAI-compatible server by default.
  */
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1";
-const DEFAULT_MODEL = "qwen/qwen3.5-35b-a3b";
+const DEFAULT_MODEL = "local-model";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";

@@ -94,12 +94,11 @@ function normalizeText(value: string): string {
 
 function isIdentityValueQuery(query: string): boolean {
   const normalized = normalizeText(query);
-  const hasJohnFocus = /\bjohn\b|\bknopf\b/.test(normalized);
   const hasIdentityToken = Array.from(IDENTITY_QUERY_TOKENS).some((token) =>
     normalized.includes(token)
   );
 
-  return hasJohnFocus && hasIdentityToken;
+  return hasIdentityToken;
 }
 
 function estimateTokens(value: string): number {
