@@ -1,4 +1,5 @@
 import { getQdrantClient, COLLECTION_NAME, embedText } from "./embedder";
+import { getCurrentMemories } from "./memory-store";
 import type { MemoryType, SearchResult, MemoryMetadata } from "./types";
 
 interface SearchOptions {
@@ -91,6 +92,39 @@ export async function getRecentByType(
   type: MemoryType,
   limit = 20
 ): Promise<SearchResult[]> {
+  const currentRows = await getCurrentMemories({
+    types: [type],
+    limit,
+  });
+
+  if (currentRows.length > 0) {
+    return currentRows.map((row) => ({
+      id: row.memoryKey,
+      text: row.text,
+      score: 1,
+      metadata: {
+        type: row.memoryType,
+        timestamp: row.updatedAt || row.createdAt,
+        sessionId: row.sessionId,
+        sourcePath: row.sourcePath,
+        sourceType: row.sourceType,
+        sourceId: row.sourceId,
+        sourceEpisode: row.sourceEpisode,
+        entities: Array.isArray(row.provenance.entities)
+          ? row.provenance.entities.filter(
+              (value): value is string => typeof value === "string"
+            )
+          : undefined,
+        category:
+          typeof row.provenance.category === "string"
+            ? row.provenance.category
+            : undefined,
+        qualityScore: row.qualityScore,
+        provenance: row.provenance,
+      },
+    }));
+  }
+
   const client = getQdrantClient();
 
   const fetchLimit = Math.max(limit * 5, 50);

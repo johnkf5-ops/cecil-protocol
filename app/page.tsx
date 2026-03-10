@@ -12,6 +12,7 @@ function generateSessionId(): string {
 
 export default function Home() {
   const [appState, setAppState] = useState<AppState>("loading");
+  const [appError, setAppError] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState(() => generateSessionId());
@@ -29,9 +30,23 @@ export default function Home() {
 
   useEffect(() => {
     fetch("/api/status")
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) {
+          throw new Error("Failed to load Cecil status.");
+        }
+
+        return r.json();
+      })
       .then((data) => {
+        setAppError(null);
         setAppState(data.onboarded ? "chat" : "onboarding");
+      })
+      .catch((error) => {
+        setAppError(
+          error instanceof Error
+            ? error.message
+            : "Failed to load Cecil status."
+        );
       });
   }, []);
 
@@ -57,18 +72,44 @@ export default function Home() {
 
     // All questions answered — submit
     setIsSubmittingOnboard(true);
+    setAppError(null);
     try {
       const res = await fetch("/api/onboard", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updated),
       });
-      if (res.ok) {
-        setAppState("chat");
+
+      if (!res.ok) {
+        const data = await res
+          .json()
+          .catch(() => ({ error: "Failed to complete onboarding." }));
+        throw new Error(
+          typeof data?.error === "string"
+            ? data.error
+            : "Failed to complete onboarding."
+        );
       }
+
+      setAppState("chat");
+    } catch (error) {
+      setAppError(
+        buildUserFacingError("Failed to complete onboarding.", error)
+      );
     } finally {
       setIsSubmittingOnboard(false);
     }
+  }
+
+  function buildUserFacingError(
+    fallback: string,
+    error: unknown
+  ): string {
+    if (error instanceof Error && error.message.trim()) {
+      return error.message;
+    }
+
+    return fallback;
   }
 
   // --- Chat ---
@@ -82,6 +123,7 @@ export default function Home() {
     setMessages(updatedMessages);
     setInput("");
     setIsSending(true);
+    setAppError(null);
 
     try {
       const res = await fetch("/api/chat", {
@@ -89,10 +131,32 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: updatedMessages }),
       });
-      const data = await res.json();
-      if (data.response) {
-        setMessages([...updatedMessages, { role: "assistant", content: data.response }]);
+
+      if (!res.ok) {
+        const data = await res
+          .json()
+          .catch(() => ({ error: "Chat request failed." }));
+        throw new Error(
+          typeof data?.error === "string" ? data.error : "Chat request failed."
+        );
       }
+
+      const data = await res.json();
+      if (!data.response || typeof data.response !== "string") {
+        throw new Error("Chat returned an empty response.");
+      }
+
+      setMessages([...updatedMessages, { role: "assistant", content: data.response }]);
+    } catch (error) {
+      const message = buildUserFacingError("Chat request failed.", error);
+      setAppError(message);
+      setMessages([
+        ...updatedMessages,
+        {
+          role: "assistant",
+          content: `I hit an error while responding: ${message}`,
+        },
+      ]);
     } finally {
       setIsSending(false);
     }
@@ -135,7 +199,7 @@ export default function Home() {
   if (appState === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black text-zinc-500 text-sm">
-        loading...
+        {appError ?? "loading..."}
       </div>
     );
   }
@@ -182,6 +246,10 @@ export default function Home() {
               {onboardStep < ONBOARDING_QUESTIONS.length - 1 ? "Next" : isSubmittingOnboard ? "..." : "Done"}
             </button>
           </div>
+
+          {appError && (
+            <p className="mt-4 text-sm text-red-400">{appError}</p>
+          )}
         </div>
       </div>
     );
@@ -239,6 +307,9 @@ export default function Home() {
 
       {/* Input */}
       <div className="border-t border-zinc-900 px-6 py-4 max-w-3xl mx-auto w-full">
+        {appError && (
+          <p className="mb-3 text-sm text-red-400">{appError}</p>
+        )}
         <div className="flex gap-3">
           <input
             autoFocus
