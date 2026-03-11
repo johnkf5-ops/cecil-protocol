@@ -1,4 +1,4 @@
-# Cecil v1.2
+# Cecil v1.2.2
 
 Persistent memory and identity protocol for AI systems.
 
@@ -6,7 +6,7 @@ Cecil is an open-source protocol for giving AI systems durable identity, inspect
 
 Cecil is the working build of what started as Echo Protocol. It gives a bot a durable memory substrate, an evolving identity, and a retrieval loop that can answer from memory instead of guessing.
 
-Cecil has been open source since day one. v1.2 is not a first public release. It is the next public revision of the protocol, focused on making memory more structured, more inspectable, and more honest about what the system actually knows.
+Cecil has been open source since day one. v1.2.2 is not a first public release. It is the current public revision of the protocol, focused on making memory more structured, more inspectable, and more honest about what the system actually knows.
 
 This repo tracks the working public Cecil build:
 
@@ -30,9 +30,9 @@ Cecil is trying to build something stricter than that:
 
 If you want a persistent AI system that can show what it knows, where it came from, and how certain it should be, that is the direction of this repo.
 
-## What Changed In v1.2
+## What Changed In v1.2.2
 
-v1.2 is the protocol revision where Cecil stops treating memory as one undifferentiated embedding pile.
+v1.2.2 is the current public revision where Cecil stops treating memory as one undifferentiated embedding pile.
 
 The main differences in this version are:
 
@@ -254,7 +254,7 @@ This is the important current direction of the project.
 
 ## Why SQLite Was Added Without Removing Qdrant
 
-This is the key design decision in v1.2.
+This is the key design decision in v1.2.2.
 
 Qdrant is still valuable because it is good at semantic retrieval across large bodies of text. That is still the right tool for:
 
@@ -308,7 +308,7 @@ That lets the system answer more honestly. It can prefer direct seed facts when 
 
 Broad questions are no longer forced to rely only on raw transcript facts.
 
-v1.2 writes:
+v1.2.2 writes:
 
 - seed-derived profile observations
 - public-corpus identity observations
@@ -318,7 +318,7 @@ This makes questions like "What matters to me?" or "What is my relationship with
 
 ### Ranked Recall Improvements
 
-Ranked recall in v1.2 is no longer just groundwork.
+Ranked recall in v1.2.2 is no longer just groundwork.
 
 It now reduces unrelated recent-memory pollution, collapses duplicate fact/milestone twins, and gives broad identity questions a cleaner path through synthesized observations.
 
@@ -950,7 +950,7 @@ The point is giving a model a durable self, a memory substrate you can inspect, 
 
 ## Roadmap
 
-### v1.2
+### v1.2.2
 
 This version establishes the current public Cecil foundation:
 

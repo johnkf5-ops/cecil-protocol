@@ -1,4 +1,4 @@
-# Contributing to Cecil v1.2
+# Contributing to Cecil v1.2.2
 
 Cecil is a persistent memory and identity protocol for AI systems.
 
