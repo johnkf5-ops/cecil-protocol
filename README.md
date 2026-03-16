@@ -1,4 +1,4 @@
-# Cecil v1.2.2
+# Cecil v1.2.3
 
 Persistent memory and identity protocol for AI systems.
 
@@ -6,7 +6,7 @@ Cecil is an open-source protocol for giving AI systems durable identity, inspect
 
 Cecil is the working build of what started as Echo Protocol. It gives a bot a durable memory substrate, an evolving identity, and a retrieval loop that can answer from memory instead of guessing.
 
-Cecil has been open source since day one. v1.2.2 is not a first public release. It is the current public revision of the protocol, focused on making memory more structured, more inspectable, and more honest about what the system actually knows.
+Cecil has been open source since day one. v1.2.3 is not a first public release. It is the current public revision of the protocol, focused on making memory more structured, more inspectable, and more honest about what the system actually knows.
 
 This repo tracks the working public Cecil build:
 
@@ -16,6 +16,8 @@ This repo tracks the working public Cecil build:
 - SQLite structured memory substrate
 - observer pipeline for post-session synthesis
 - deep search for factual recall
+- web search for real-world queries via Brave Search API
+- real-time correction handling
 - Discord bot integration
 
 ## What Makes Cecil Different
@@ -29,6 +31,20 @@ Cecil is trying to build something stricter than that:
 - evidence-aware answers that distinguish direct memory from inference
 
 If you want a persistent AI system that can show what it knows, where it came from, and how certain it should be, that is the direction of this repo.
+
+## What Changed In v1.2.3
+
+v1.2.3 adds web search, real-time correction handling, and prompt hardening.
+
+The main additions in this version are:
+
+- web search via Brave Search API, triggered by `[WEBSEARCH: ...]` markers for real-world queries (news, prices, weather, recommendations)
+- real-time correction handler that detects when the user corrects a fact, immediately embeds the correction, and soft-retires conflicting old facts
+- zero-fabrication prompt enforcement that forces the system to search rather than guess
+- mandatory deep search rules that make memory lookup the default for personal factual questions
+- meeting command scoping so meeting commands only fire in the designated channel
+- slimmer identity window with profile and delta files removed from runtime assembly
+- retired fact filtering so soft-retired corrections no longer appear in retrieval results
 
 ## What Changed In v1.2.2
 
@@ -77,12 +93,15 @@ flowchart TB
         RECALL["Ranked Recall Window"]
         LLM["LLM"]
         DS{"[SEARCH: ...]?"}
+        WS{"[WEBSEARCH: ...]?"}
         DEEP["Deep Search"]
+        WEB["Web Search\nBrave API"]
         OBS["Observer"]
+        CORR["Correction Handler"]
     end
 
     subgraph STORAGE["Storage"]
-        ID["Identity Files\nseed / narrative / delta / profile"]
+        ID["Identity Files\nseed / narrative"]
         Q["Qdrant\nsemantic memory"]
         SQL["SQLite\nmemory_current / memory_events"]
         MD["Markdown Mirror\nmemory/"]
@@ -109,12 +128,18 @@ flowchart TB
     RECALL --> SQL
     META --> LLM
     LLM --> DS
-    DS -- No --> RESP["Answer"]
+    DS -- No --> WS
     DS -- Yes --> DEEP
     DEEP --> Q
     DEEP --> LLM
+    WS -- No --> RESP["Answer"]
+    WS -- Yes --> WEB
+    WEB --> LLM
     LLM --> RESP
     RESP --> OBS
+    RESP --> CORR
+    CORR --> Q
+    CORR --> SQL
     OBS --> ID
     OBS --> Q
     OBS --> SQL
@@ -169,10 +194,8 @@ Identity lives in:
 
 - `identity/seed.md`
 - `identity/narrative.md`
-- `identity/delta.md`
-- optionally `identity/profile.md`
 
-The seed is immutable. Narrative and delta change over time as Cecil observes actual behavior.
+The seed is immutable. Narrative changes over time as Cecil observes actual behavior.
 
 ### 2. Capture Layer
 
@@ -236,9 +259,10 @@ Chat works like this:
 1. Cecil assembles the identity window
 2. Cecil merges recall from structured memory and semantic search
 3. The model responds
-4. If the model emits `[SEARCH: ...]`, Cecil runs deep search
-5. Cecil answers again using the search results
-6. After the session, observer capture runs
+4. If the model emits `[SEARCH: ...]`, Cecil runs deep search against memory
+5. If the model emits `[WEBSEARCH: ...]`, Cecil runs a web search via Brave API
+6. Cecil answers again using the search results
+7. After the session, observer capture and correction detection run
 
 ## Main Features In This Build
 
@@ -899,6 +923,7 @@ app/
     status/
 
 cecil/
+  correction-handler.ts
   deep-search.ts
   embedder.ts
   fact-extractor.ts
@@ -913,6 +938,7 @@ cecil/
   response-pipeline.ts
   retriever.ts
   types.ts
+  web-search.ts
 
 discord/
   index.ts
@@ -950,9 +976,21 @@ The point is giving a model a durable self, a memory substrate you can inspect, 
 
 ## Roadmap
 
+### v1.2.3 (current)
+
+This version adds real-world awareness and self-correction:
+
+- web search via Brave Search API
+- real-time correction handler with conflict retirement
+- zero-fabrication prompt enforcement
+- mandatory search-before-answer rules
+- meeting command channel scoping
+- slimmer identity window
+- retired fact filtering in retrieval
+
 ### v1.2.2
 
-This version establishes the current public Cecil foundation:
+This version establishes the public Cecil foundation:
 
 - shared response pipeline
 - dual-store memory with Qdrant and SQLite
@@ -997,6 +1035,9 @@ This build now includes:
 - retireable synthesized memories
 - memory inspection API and CLI
 - Discord bot integration
+- web search via Brave Search API
+- real-time correction handler with conflict retirement
+- zero-fabrication prompt enforcement
 
 The next layer after this is expanding beyond public-corpus inference into private reflection and stronger longitudinal evaluation.
 
