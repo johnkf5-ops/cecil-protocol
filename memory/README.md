@@ -1,35 +1,40 @@
 # Memory
 
-This directory is Cecil's human-readable memory mirror.
+Cecil's runtime memory directory. Everything here is gitignored — it's personal data, not source code.
 
-It exists so the protocol's runtime memory is inspectable by a human, not trapped inside a database or vector store.
-
-Cecil stores memory in multiple forms at once:
-
-- Qdrant for semantic retrieval
-- SQLite for structured current state and memory-event history
-- Markdown files in `memory/` for direct inspection of runtime artifacts
-
-Typical runtime contents look like this:
-
-```text
+```
 memory/
-  conversations/        timestamped session logs
-  observations/         synthesized observations, identity facets, and relationship summaries
-  podcasts/             ingested podcast transcript material
-  interviews/           ingested interview transcript material
-  facts/                extracted fact records from long-form content
-  milestones/           meaningful derived experience/event records
-  structured-memory.sqlite
-  .session-counter.json
+  conversations/           Session logs (markdown)
+  observations/            Synthesis results (markdown)
+  facts/                   Extracted fact records
+  podcasts/                Ingested podcast material
+  structured-memory.sqlite SQLite database (memory + world model)
+  .session-counter.json    Observer session counter
 ```
 
-Most of these files and folders are gitignored because they are personal runtime data, not source code.
+## Inspecting Memory
 
-If you want to inspect the active memory substrate, prefer:
+```bash
+npm run memory:inspect                          # Browse current memory
+npm run memory:inspect -- --query="topic"       # Ranked recall
+npm run memory:inspect -- --query="topic" --window  # Full recall window
+npm run memory:audit                            # Health check
+npm run world-model                             # World model summary
+```
 
-- `npm run memory:inspect`
-- `npm run memory:audit`
-- `GET /api/memory`
+Or via API:
+```
+GET /api/memory
+GET /api/memory?query=your+query&includeWindow=true
+GET /api/entities
+GET /api/contradictions
+GET /api/open-loops
+```
 
-The markdown mirror is useful for understanding what happened at runtime. The SQLite store is the source of truth for structured current memory and memory events.
+## Storage Architecture
+
+Memory is stored in two systems simultaneously:
+- **Qdrant** — Semantic vector search
+- **SQLite** — Structured state with provenance and lifecycle history
+
+The markdown files are a human-readable mirror for direct inspection. SQLite is the source of truth.

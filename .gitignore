@@ -59,7 +59,8 @@ yarn-error.log*
 /podcasts/
 
 # discord bot personality files (user-specific)
-/discord/personality/
+/discord/personality/*
+!/discord/personality/*.example
 
 # session handoff notes
 sessionhandoff.md

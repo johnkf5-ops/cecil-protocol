@@ -1,6 +1,6 @@
 {
   "name": "cecil",
-  "version": "1.2.3",
+  "version": "2.0.0",
   "private": true,
   "license": "Apache-2.0",
   "scripts": {
@@ -11,10 +11,15 @@
     "discord": "npx tsx discord/index.ts",
     "memory:inspect": "tsx scripts/inspect-memory.ts",
     "memory:audit": "tsx scripts/audit-memory.ts",
-    "memory:synthesize": "tsx scripts/synthesize-podcasts.ts"
+    "memory:synthesize": "tsx scripts/synthesize-podcasts.ts",
+    "world-model": "tsx scripts/world-model.ts",
+    "reflect": "tsx scripts/reflect.ts",
+    "maintenance": "tsx scripts/maintenance.ts",
+    "mcp": "tsx cecil/mcp-server.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@qdrant/js-client-rest": "^1.17.0",
     "discord.js": "^14.16.0",
     "dotenv": "^16.4.0",

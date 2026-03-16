@@ -29,17 +29,17 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // v2: Go straight to chat — onboarding is optional
     fetch("/api/status")
       .then(async (r) => {
         if (!r.ok) {
           throw new Error("Failed to load Cecil status.");
         }
-
         return r.json();
       })
-      .then((data) => {
+      .then(() => {
         setAppError(null);
-        setAppState(data.onboarded ? "chat" : "onboarding");
+        setAppState("chat");
       })
       .catch((error) => {
         setAppError(

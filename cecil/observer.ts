@@ -4,6 +4,7 @@ import { chatCompletion } from "./llm";
 import { embed, embedBatch, initCollection } from "./embedder";
 import { recordMemoryWrite } from "./memory-store";
 import { getRecentByType } from "./retriever";
+import { ensureWorldModelSchema, extractWorldData, upsertEntity, recordEntityMention, recordBelief, recordOpenLoop, recordContradiction, findEntityByName, getWorldModelSummary, listEntities, listBeliefs } from "./world-model";
 import type { Message, SessionCounter } from "./types";
 
 const MEMORY_DIR = path.join(process.cwd(), "memory");
@@ -137,6 +138,52 @@ async function lightPass(
     );
   }
 
+  // World model extraction — extract entities, beliefs, open loops, contradictions
+  try {
+    ensureWorldModelSchema();
+    const extracted = await extractWorldData(fullText);
+
+    for (const e of extracted.entities) {
+      if (!e.name || !e.kind) continue;
+      const entity = upsertEntity(e.name, e.kind, now);
+      recordEntityMention(entity.entityId, `conversation:${sessionId}`, now);
+    }
+
+    for (const b of extracted.beliefs) {
+      if (!b.content) continue;
+      const entityId = b.aboutEntity
+        ? findEntityByName(b.aboutEntity)?.entityId ?? null
+        : null;
+      recordBelief(b.content, entityId, `conversation:${sessionId}`, now);
+    }
+
+    for (const ol of extracted.openLoops) {
+      if (!ol.content) continue;
+      const entityId = ol.aboutEntity
+        ? findEntityByName(ol.aboutEntity)?.entityId ?? null
+        : null;
+      recordOpenLoop(ol.content, entityId, now);
+    }
+
+    for (const c of extracted.contradictions) {
+      if (!c.statementA || !c.statementB) continue;
+      const entityId = c.aboutEntity
+        ? findEntityByName(c.aboutEntity)?.entityId ?? null
+        : null;
+      recordContradiction(
+        c.statementA,
+        c.statementB,
+        `conversation:${sessionId}`,
+        `conversation:${sessionId}`,
+        entityId,
+        now
+      );
+    }
+  } catch (err) {
+    // World model extraction is non-critical — don't fail the observer
+    console.error("[observer] world model extraction failed:", err);
+  }
+
   return true;
 }
 
@@ -155,25 +202,48 @@ async function fullSynthesis(sessionId: string): Promise<void> {
       readFileOrNull(path.join(IDENTITY_DIR, "delta.md")),
     ]);
 
-  if (!seed) return; // Can't synthesize without a seed
+  // Build baseline context — seed if available, otherwise world model summary
+  let baseline: string;
+  if (seed) {
+    baseline = seed;
+  } else {
+    try {
+      ensureWorldModelSchema();
+      const summary = getWorldModelSummary();
+      const topEntities = listEntities().slice(0, 10);
+      const topBeliefs = listBeliefs("active").slice(0, 8);
+      const entityLines = topEntities.map((e) => `- ${e.name} (${e.kind}, ${e.mentionCount} mentions)`);
+      const beliefLines = topBeliefs.map((b) => `- ${b.content}`);
+      baseline = [
+        `World model: ${summary.entities} entities, ${summary.beliefs} beliefs, ${summary.openLoops} open loops, ${summary.contradictions} contradictions`,
+        entityLines.length > 0 ? `\nTop entities:\n${entityLines.join("\n")}` : "",
+        beliefLines.length > 0 ? `\nActive beliefs:\n${beliefLines.join("\n")}` : "",
+      ].filter(Boolean).join("\n");
+    } catch {
+      baseline = "No baseline available yet — synthesizing from conversation data only.";
+    }
+  }
 
   const conversationTexts = recentConversations.map((r) => r.text).join("\n---\n");
   const observationTexts = recentObservations.map((r) => r.text).join("\n");
 
+  if (!conversationTexts.trim()) return; // Nothing to synthesize
+
   // --- LLM Call 1: Detect patterns ---
   const patterns = await chatCompletion({
-    system: `You are an observer module in a memory protocol. Your job is to analyze recent data and detect patterns. Look for:
+    system: `You are an observer module for a personal assistant with persistent memory. Your job is to analyze recent conversations and detect patterns. Look for:
 - Recurring themes, priorities, or focal points
 - Shifts in direction or emphasis over time
 - Contradictions between stated intent and observed behavior
 - Evolution in approach, strategy, or goals
 - Significant decisions or turning points
+- New information about the user (name, role, preferences, relationships)
 
 Be specific and evidence-based. Cite what you observed. Output a concise list of patterns.`,
     messages: [
       {
         role: "user",
-        content: `Here is the baseline seed:\n${seed}\n\nPrevious observations:\n${observationTexts || "None yet."}\n\nRecent data:\n${conversationTexts}\n\nWhat patterns do you observe?`,
+        content: `Here is the current baseline:\n${baseline}\n\nPrevious observations:\n${observationTexts || "None yet."}\n\nRecent conversations:\n${conversationTexts}\n\nWhat patterns do you observe?`,
       },
     ],
     maxTokens: 2048,
@@ -181,7 +251,7 @@ Be specific and evidence-based. Cite what you observed. Output a concise list of
 
   // --- LLM Call 2: Update narrative ---
   const newNarrative = await chatCompletion({
-    system: `You are updating a living narrative document. This document tracks the evolving state of a subject — not a static summary, but a picture that changes as new patterns emerge.
+    system: `You are updating a living narrative document. This document tracks the evolving understanding of a person — not a static summary, but a picture that changes as new patterns emerge from conversation.
 
 Be direct and specific. Include evidence from the data. The narrative should synthesize what the patterns reveal into a coherent, evolving understanding.
 
@@ -189,7 +259,7 @@ Output ONLY the updated narrative content in markdown. Start with "# Narrative" 
     messages: [
       {
         role: "user",
-        content: `Baseline seed:\n${seed}\n\nCurrent narrative:\n${narrative || "No narrative yet."}\n\nNewly detected patterns:\n${patterns}\n\nWrite the updated narrative.`,
+        content: `Current baseline:\n${baseline}\n\nCurrent narrative:\n${narrative || "No narrative yet."}\n\nNewly detected patterns:\n${patterns}\n\nWrite the updated narrative.`,
       },
     ],
     maxTokens: 2048,
@@ -197,9 +267,9 @@ Output ONLY the updated narrative content in markdown. Start with "# Narrative" 
 
   // --- LLM Call 3: Update delta ---
   const newDelta = await chatCompletion({
-    system: `You are computing the delta — the drift between stated baseline and observed patterns. The delta captures where the data diverges from initial configuration or intent.
+    system: `You are computing the delta — the drift between the current baseline understanding and newly observed patterns. The delta captures where the data diverges from what was previously known.
 
-Identify where observed behavior, themes, or priorities differ from what the seed defines. This is signal detection, not judgment. If there is no meaningful drift, say so — don't fabricate gaps.
+Identify where observed behavior, themes, or priorities differ from the baseline. This is signal detection, not judgment. If there is no meaningful drift, say so — don't fabricate gaps.
 
 Be specific. Reference evidence from the data.
 
@@ -207,7 +277,7 @@ Output ONLY the delta content in markdown. Start with "# Delta" as the heading.`
     messages: [
       {
         role: "user",
-        content: `Baseline seed (stated):\n${seed}\n\nCurrent narrative (observed):\n${newNarrative}\n\nPrevious delta:\n${delta || "No delta yet."}\n\nDetected patterns:\n${patterns}\n\nCompute the updated delta.`,
+        content: `Current baseline:\n${baseline}\n\nCurrent narrative (observed):\n${newNarrative}\n\nPrevious delta:\n${delta || "No delta yet."}\n\nDetected patterns:\n${patterns}\n\nCompute the updated delta.`,
       },
     ],
     maxTokens: 2048,

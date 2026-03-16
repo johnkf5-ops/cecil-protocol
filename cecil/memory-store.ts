@@ -6,21 +6,68 @@ import type { MemorySourceType, MemoryType } from "./types";
 let cachedSubjectName: string | null = null;
 let cachedSubjectTokens: string[] = [];
 
-async function loadSubjectName(): Promise<string> {
+/**
+ * Resolve the subject's name. Priority:
+ * 1. Runtime override (setSubjectName)
+ * 2. identity/seed.md **Name:** field
+ * 3. World model — person entity with highest mention count
+ * 4. Fallback: "the user"
+ */
+export async function loadSubjectName(): Promise<string> {
   if (cachedSubjectName) return cachedSubjectName;
+
+  // Try seed.md first
   try {
     const seedPath = path.join(process.cwd(), "identity", "seed.md");
     const seed = await fs.readFile(seedPath, "utf-8");
     const match = seed.match(/\*\*Name:\*\*\s*(.+)/i);
-    cachedSubjectName = match ? match[1].trim() : "the subject";
+    if (match) {
+      cachedSubjectName = match[1].trim();
+      cachedSubjectTokens = cachedSubjectName
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((t: string) => t.length >= 3);
+      return cachedSubjectName;
+    }
   } catch {
-    cachedSubjectName = "the subject";
+    // No seed file — try world model
   }
+
+  // Fall back to world model: find the person entity with highest mention count
+  try {
+    const db = getDatabase();
+    const row = db
+      .prepare(
+        `SELECT name FROM world_entities WHERE kind = 'person' ORDER BY mention_count DESC, last_seen DESC LIMIT 1`
+      )
+      .get<{ name: string }>();
+    if (row?.name) {
+      cachedSubjectName = row.name;
+      cachedSubjectTokens = cachedSubjectName
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((t: string) => t.length >= 3);
+      return cachedSubjectName;
+    }
+  } catch {
+    // World model tables may not exist yet — that's fine
+  }
+
+  cachedSubjectName = "the user";
+  cachedSubjectTokens = [];
+  return cachedSubjectName;
+}
+
+/**
+ * Set the subject name at runtime (e.g. learned from conversation).
+ * Clears the cache so subsequent calls use the new name.
+ */
+export function setSubjectName(name: string): void {
+  cachedSubjectName = name.trim();
   cachedSubjectTokens = cachedSubjectName
     .toLowerCase()
     .split(/\s+/)
     .filter((t: string) => t.length >= 3);
-  return cachedSubjectName;
 }
 
 function getSubjectTokens(): string[] {

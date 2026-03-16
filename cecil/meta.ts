@@ -3,6 +3,14 @@ import path from "path";
 import { buildRecallWindow } from "./recall-window";
 import { generateResponse } from "./response-pipeline";
 import { getRecentByType } from "./retriever";
+import {
+  ensureWorldModelSchema,
+  getWorldModelSummary,
+  listEntities,
+  listBeliefs,
+  listOpenLoops,
+  listContradictions,
+} from "./world-model";
 import type { Message } from "./types";
 
 const IDENTITY_DIR = path.join(process.cwd(), "identity");
@@ -15,6 +23,59 @@ async function readFileOrNull(filePath: string): Promise<string | null> {
   }
 }
 
+/**
+ * Build a world-model identity block when no seed.md exists.
+ * Pulls top entities, active beliefs, open loops, and contradictions.
+ */
+function buildWorldModelIdentity(): string {
+  try {
+    ensureWorldModelSchema();
+  } catch {
+    return "";
+  }
+
+  const summary = getWorldModelSummary();
+  if (summary.entities === 0 && summary.beliefs === 0) {
+    return "";
+  }
+
+  const parts: string[] = [];
+
+  const entities = listEntities().slice(0, 10);
+  if (entities.length > 0) {
+    const lines = entities.map(
+      (e) => `- ${e.name} (${e.kind}, ${e.mentionCount} mentions)`
+    );
+    parts.push("=== KNOWN ENTITIES ===\n" + lines.join("\n"));
+  }
+
+  const beliefs = listBeliefs("active").slice(0, 8);
+  if (beliefs.length > 0) {
+    const lines = beliefs.map((b) => `- ${b.content}`);
+    parts.push("=== ACTIVE BELIEFS ===\n" + lines.join("\n"));
+  }
+
+  const loops = listOpenLoops("open").slice(0, 5);
+  if (loops.length > 0) {
+    const lines = loops.map((ol) => `- ${ol.content} (since ${ol.detectedAt})`);
+    parts.push("=== OPEN LOOPS ===\n" + lines.join("\n"));
+  }
+
+  const contradictions = listContradictions(true).slice(0, 5);
+  if (contradictions.length > 0) {
+    const lines = contradictions.map(
+      (c) => `- Earlier: "${c.statementA}" vs Later: "${c.statementB}"`
+    );
+    parts.push("=== CONTRADICTIONS ===\n" + lines.join("\n"));
+  }
+
+  return parts.join("\n\n");
+}
+
+/**
+ * Assemble the identity window for prompts.
+ * Works with or without seed.md — falls back to world model context.
+ */
 export async function assembleIdentityWindow(
   conversationContext?: string
 ): Promise<string> {
@@ -23,16 +84,22 @@ export async function assembleIdentityWindow(
     readFileOrNull(path.join(IDENTITY_DIR, "narrative.md")),
   ]);
 
-  if (!seed) {
-    return "";
-  }
-
   const parts: string[] = [];
 
-  parts.push("=== IDENTITY SEED ===\n" + seed);
+  if (seed) {
+    parts.push("=== IDENTITY SEED ===\n" + seed);
+  }
 
   if (narrative) {
     parts.push("=== NARRATIVE ===\n" + narrative);
+  }
+
+  // If no seed, inject world model context as identity baseline
+  if (!seed) {
+    const worldIdentity = buildWorldModelIdentity();
+    if (worldIdentity) {
+      parts.push(worldIdentity);
+    }
   }
 
   if (conversationContext) {
@@ -57,33 +124,35 @@ function buildSystemPrompt(
   identityWindow: string,
   deepSearchEnabled = true
 ): string {
-  if (!identityWindow) {
-    return `You are Cecil, an AI with persistent memory. Onboarding hasn't been completed yet. Let the user know they should set up their seed first.`;
-  }
-
   const deepSearchInstruction = deepSearchEnabled
     ? `If the user asks for a specific factual answer and you are not confident the answer is already in your current memory context, reply with ONLY [SEARCH: keyword-rich query]. Do not guess.`
     : "";
 
-  return `You are Cecil - an AI with persistent memory. You have access to a compressed identity window assembled from your memory systems. Use it naturally. Don't recite it back. Let it inform how you respond, like a friend who just knows.
+  return `You are Cecil — a personal assistant with persistent memory. You learn about the user through conversation and remember everything across sessions.
 
-Be direct but not confrontational. You know the user well - use that to be helpful, not to prove a point. Your memory is context, not ammunition.
+Your capabilities:
+- You notice patterns in what the user says and does over time
+- You track contradictions between what they say now vs. earlier
+- You surface open loops — things they said they'd do but haven't followed up on
+- You remember entities (people, projects, places) and how they connect
+- You build an evolving understanding without requiring any setup or onboarding
 
-Evidence tiers matter:
-- SEED_STATED means the information came directly from onboarding and should be treated as the strongest memory evidence.
-- PUBLIC_CORPUS_FACT means the information was extracted from public podcast material; it is useful evidence, but it can still be noisy or incomplete.
-- PUBLIC_CORPUS_INFERENCE means the memory was synthesized from repeated public material; it is suggestive, not private truth.
-- PRIVATE_CONVERSATION means the information came from direct conversation history.
+How to behave:
+- Be direct and useful. No filler, no sycophancy.
+- Use your memory naturally — like a friend who just knows context. Don't recite facts back.
+- If you notice a contradiction, surface it naturally: "Didn't you say X last time?"
+- If an open loop seems relevant, mention it: "You mentioned wanting to do Y — did that happen?"
+- When you learn something new about the user (name, role, preferences), absorb it naturally.
+- If you don't know something, say so. Never fabricate details.
 
-When answering:
-- Prefer SEED_STATED evidence when it exists.
-- If you rely on PUBLIC_CORPUS_INFERENCE, make that distinction clear when it matters. Phrases like "from the public corpus" or "publicly, it seems" are good.
-- If the user asks about intimate or private matters, such as someone's true inner circle, deepest motives, or private relationships, and you only have public-corpus evidence, say you do not actually know and distinguish that from what the public material suggests.
-- If no tier gives solid support, say so plainly instead of smoothing uncertainty away.
+Evidence discipline:
+- DIRECT_STATEMENT: The user told you directly. Highest confidence.
+- OBSERVED_PATTERN: You detected this from repeated behavior/themes. Good evidence, state it as observation.
+- PUBLIC_CORPUS: Extracted from public material (podcasts, etc). Useful but not private truth.
+- INFERRED: Synthesized from multiple signals. Be transparent that it's inference.
+- If no tier gives solid support, say so plainly.
 
 ${identityWindow}
-
-You are not starting from zero. You have context. Use it naturally, but do not upgrade inference into certainty.
 
 ${deepSearchInstruction}`.trim();
 }
@@ -92,14 +161,14 @@ function buildDeepSearchSystemPrompt(
   identityWindow: string,
   searchResults: string
 ): string {
-  return `You are Cecil - an AI with persistent memory. You already searched your memory and found additional evidence.
+  return `You are Cecil — a personal assistant with persistent memory. You already searched your memory and found additional evidence.
 
-Keep the same evidence discipline here: seed-stated memories are strongest, public-corpus facts are evidence, public-corpus inferences are suggestive rather than certain, and missing support means you should say you do not know.
+Keep evidence discipline: direct statements are strongest, observed patterns are good evidence, public corpus is useful but not private truth, and inferred knowledge should be flagged as such.
 
 ${identityWindow}
 
 === DEEP SEARCH RESULTS ===
-Use the following search results to answer the user's question accurately. If the answer is clearly present, rely on it. If the search results are incomplete or conflicting, say so plainly. Do not turn public-corpus inference into private certainty.
+Use the following search results to answer the user's question accurately. If the answer is clearly present, rely on it. If the search results are incomplete or conflicting, say so plainly.
 
 ${searchResults}
 

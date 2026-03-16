@@ -1,5 +1,6 @@
 import { collectRankedRecallBundle } from "./ranked-recall";
 import { search, searchByType } from "./retriever";
+import { buildWorldModelContext, classifyQueryIntent, ensureWorldModelSchema } from "./world-model";
 import type { MemoryType, SearchResult } from "./types";
 
 const DEFAULT_RECALL_TYPES: MemoryType[] = [
@@ -128,10 +129,10 @@ function computeRecencyBoost(timestamp?: string): number {
 
 const EVIDENCE_GUIDE = [
   "=== EVIDENCE GUIDE ===",
-  "- SEED_STATED: directly supplied during onboarding; highest confidence.",
-  "- PUBLIC_CORPUS_FACT: extracted from public podcast material; useful evidence, but transcript extraction can be noisy.",
-  "- PUBLIC_CORPUS_INFERENCE: synthesized from repeated public material; useful, but not private truth.",
-  "- PRIVATE_CONVERSATION: drawn from direct conversation history.",
+  "- DIRECT_STATEMENT: the user told you this directly; highest confidence.",
+  "- OBSERVED_PATTERN: detected from repeated behavior or themes across conversations; good evidence.",
+  "- PUBLIC_CORPUS: extracted or synthesized from public material (podcasts, etc); useful, but not private truth.",
+  "- INFERRED: synthesized from multiple signals; be transparent that it's inference.",
   "- If no tier gives solid support, answer that it is not known.",
 ].join("\n");
 
@@ -173,27 +174,37 @@ function getEvidenceTier(params: {
       ? params.provenance.observationKind
       : "";
 
+  // Direct statements from user (onboarding or conversation)
   if (epistemicStatus === "seed_stated" || knowledgeScope === "seed") {
-    return "SEED_STATED";
+    return "DIRECT_STATEMENT";
   }
-
   if (params.sourceType === "onboarding" && observationKind === "profile") {
-    return "SEED_STATED";
+    return "DIRECT_STATEMENT";
   }
-
-  if (params.sourceType === "fact_extraction") {
-    return "PUBLIC_CORPUS_FACT";
-  }
-
-  if (epistemicStatus === "public_corpus_inference" || knowledgeScope === "public_corpus") {
-    return "PUBLIC_CORPUS_INFERENCE";
-  }
-
   if (params.sourceType === "conversation_session") {
-    return "PRIVATE_CONVERSATION";
+    return "DIRECT_STATEMENT";
+  }
+  if (params.sourceType === "direct_correction") {
+    return "DIRECT_STATEMENT";
   }
 
-  return params.memoryType === "observation" ? "DERIVED_MEMORY" : "MEMORY_RECORD";
+  // Observed patterns from synthesis
+  if (params.sourceType === "observer_synthesis") {
+    return "OBSERVED_PATTERN";
+  }
+
+  // Public corpus material
+  if (params.sourceType === "fact_extraction") {
+    return "PUBLIC_CORPUS";
+  }
+  if (epistemicStatus === "public_corpus_inference" || knowledgeScope === "public_corpus") {
+    return "PUBLIC_CORPUS";
+  }
+  if (params.sourceType === "podcast_ingest") {
+    return "PUBLIC_CORPUS";
+  }
+
+  return params.memoryType === "observation" ? "OBSERVED_PATTERN" : "INFERRED";
 }
 
 function buildSourceLabel(params: {
@@ -447,11 +458,25 @@ export async function buildRecallWindow(
     })
     .filter((section): section is string => section !== null);
 
+  // Inject world model context (contradictions, open loops, beliefs, entities)
+  let worldModelBlock = "";
+  try {
+    ensureWorldModelSchema();
+    worldModelBlock = buildWorldModelContext(query);
+  } catch {
+    // Non-critical — proceed without world model
+  }
+
+  const contextParts: string[] = [EVIDENCE_GUIDE];
+  if (worldModelBlock) {
+    contextParts.push(worldModelBlock);
+  }
+  if (sections.length > 0) {
+    contextParts.push(sections.join("\n\n"));
+  }
+
   return {
-    formattedContext:
-      sections.length > 0
-        ? `${EVIDENCE_GUIDE}\n\n${sections.join("\n\n")}`
-        : EVIDENCE_GUIDE,
+    formattedContext: contextParts.join("\n\n"),
     snippets: selected,
   };
 }

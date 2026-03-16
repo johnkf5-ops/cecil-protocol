@@ -1,20 +1,17 @@
 # Identity
 
-This directory holds Cecil's identity documents.
+This directory holds Cecil's identity documents. All files here are **runtime data** — they are gitignored and never committed.
 
-These files are runtime data. They are generated during onboarding and updated over time as the system observes behavior and synthesizes a continuing self-model.
+Cecil v2 works without any of these files. It learns from conversation and builds understanding through the world model. If a seed exists, it's used as the strongest identity baseline.
 
 | File | Purpose | Created by |
 |------|---------|------------|
-| `seed.md` | Immutable onboarding baseline: who the user directly says they are | Onboarding |
-| `narrative.md` | Living self-model shaped by observer synthesis over time | Observer |
-| `delta.md` | Drift and tension between the original seed and later observed behavior | Observer |
-| `profile.md` | Optional public-facing profile material | User |
+| `seed.md` | Optional onboarding baseline: who the user directly says they are | Onboarding (optional) |
+| `narrative.md` | Living understanding shaped by observer synthesis over time | Observer |
+| `delta.md` | Drift between baseline and observed behavior | Observer |
 
 Important distinctions:
 
-- `seed.md` is the highest-confidence identity source because it is directly stated during onboarding.
-- `narrative.md` and `delta.md` are interpretive layers, not immutable ground truth.
-- These files are part of Cecil's identity substrate, but they are not the same thing as structured memory in SQLite.
-
-These files are gitignored because they contain personal runtime data and should not be committed to the public repo.
+- `seed.md` is the highest-confidence identity source because it is directly stated. But it's **optional** — Cecil learns your name, role, and preferences from conversation.
+- `narrative.md` and `delta.md` are interpretive layers built by the observer's synthesis pipeline.
+- Without any of these files, Cecil starts from zero and builds understanding as you talk.

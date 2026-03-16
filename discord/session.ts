@@ -1,23 +1,8 @@
 import { observe } from "../cecil/observer";
 import { handleCorrections } from "../cecil/correction-handler";
+import { loadSubjectName } from "../cecil/memory-store";
 import type { Message } from "../cecil/types";
 import { IDLE_TIMEOUT_MS } from "./config";
-
-import fs from "fs/promises";
-import path from "path";
-
-let cachedSubjectName: string | null = null;
-async function getSubjectName(): Promise<string> {
-  if (cachedSubjectName) return cachedSubjectName;
-  try {
-    const seed = await fs.readFile(path.join(process.cwd(), "identity", "seed.md"), "utf-8");
-    const match = seed.match(/\*\*Name:\*\*\s*(.+)/i);
-    cachedSubjectName = match?.[1]?.trim() || "the user";
-  } catch {
-    cachedSubjectName = "the user";
-  }
-  return cachedSubjectName;
-}
 
 let lastMessages: Message[] = [];
 let idleTimer: NodeJS.Timeout | null = null;
@@ -48,7 +33,7 @@ export function onResponse(messages: Message[]): void {
     })
     .catch((err) => console.error("[cecil] Observer error:", err));
 
-  getSubjectName()
+  loadSubjectName()
     .then((name) => handleCorrections(messages, sid, name))
     .then((count) => {
       if (count > 0) console.log(`[cecil] ${count} correction(s) embedded`);

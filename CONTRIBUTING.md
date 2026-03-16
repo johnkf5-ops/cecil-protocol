@@ -1,184 +1,47 @@
-# Contributing to Cecil v1.2.2
+# Contributing
 
-Cecil is a persistent memory and identity protocol for AI systems.
+Cecil is a personal assistant with persistent memory. See the [README](README.md) for what it does and the [docs/](docs/) for architecture and conventions.
 
-This repo is not just a chat UI. It includes:
-
-- web chat and onboarding
-- identity files
-- Qdrant semantic retrieval
-- SQLite structured memory
-- observer synthesis
-- deep search
-- Discord integration
-- memory inspection and memory audit tooling
-
-If you want to contribute, the most useful contributions are the ones that improve memory quality, inspectability, retrieval quality, or reliability.
-
-## Before You Start
-
-Make sure you can run the repo locally.
-
-### Requirements
-
-- Node.js 24 recommended
-- Docker
-- an OpenAI-compatible model endpoint
-
-### Local Setup
+## Setup
 
 ```bash
 npm install
 docker compose up -d
+cp .env.example .env    # configure your LLM endpoint
 npm run dev
 ```
 
-Then:
-
-1. Copy `.env.example` to `.env`
-2. Configure the LLM values used by `cecil/llm.ts`
-3. Open `http://localhost:3000`
-4. Complete onboarding so the identity files are created
-
-## How To Validate Your Changes
-
-Before opening a PR, run:
+## Before You Submit
 
 ```bash
 npm run lint
 npx tsc --noEmit
+npx tsx scripts/test-v2.ts   # if you touched memory/recall behavior
 ```
 
-If you touched memory behavior, also run:
+## What's Most Valuable
 
-```bash
-npm run memory:inspect -- --limit=10
-npm run memory:audit -- --limit=200
-```
+1. **Memory quality** — Better observer synthesis, fact extraction, provenance handling
+2. **Retrieval quality** — Better ranking, dedup, token budgeting, evidence tier handling
+3. **New integrations** — Slack adapter, Telegram adapter, new ingestion pipelines
+4. **Inspectability** — Better debugging tools, memory browsing, audit output
+5. **Reliability** — Safer write paths, better startup diagnostics, error handling
 
-If your change affects recall quality, also test:
+## Guidelines
 
-```text
-GET /api/memory?query=your+query&includeWindow=true
-GET /api/memory?query=your+query&includeAudit=true
-```
-
-If your change affects synthesis or evidence framing, also validate:
-
-```bash
-npm run memory:synthesize
-```
-
-Then inspect whether the resulting memories are being presented as direct knowledge, public-corpus fact, public-corpus inference, or private conversation memory in the recall window.
-
-## What Contributions Are Most Valuable
-
-### 1. Memory Quality
-
-Examples:
-
-- better observer synthesis
-- better fact extraction
-- better milestone derivation
-- better provenance handling
-- stronger idempotent writes
-- clearer separation between direct memory and inferred memory
-
-### 2. Retrieval Quality
-
-Examples:
-
-- better ranked recall
-- better dedupe
-- better token budgeting
-- better weighting of recency, quality, and source confidence
-- better evidence-tier handling for recall and answer generation
-
-### 3. Inspectability
-
-Examples:
-
-- better memory audit output
-- easier memory browsing
-- clearer debugging tools
-- better admin or API inspection surfaces
-
-### 4. Ingestion Pipelines
-
-Examples:
-
-- Slack exports
-- Discord exports
-- GitHub issues
-- journals
-- notes
-- email archives
-
-Follow the existing ingestion pattern instead of inventing a separate memory model.
-
-### 5. Reliability And Developer Experience
-
-Examples:
-
-- safer write paths
-- better test coverage
-- better startup diagnostics
-- clearer environment validation
-
-## Contribution Guidelines
-
-- Keep changes focused.
-- Do not re-architect the whole protocol in one PR.
+- Keep changes focused. Don't re-architect the whole system in one PR.
+- Prefer extending existing patterns over creating parallel systems.
 - Preserve existing behavior unless the change is explicitly meant to alter it.
-- Do not remove Qdrant unless there is an approved design change for that.
-- Prefer extending the current memory model over creating parallel systems.
-- Keep documentation aligned with the actual running build.
-
-## Code Style
-
-- TypeScript for protocol code
-- keep abstractions justified
-- prefer small, inspectable functions
-- add comments only when the logic is not obvious
-- prefer changing the existing path over adding a second path that does the same thing
-
-## Repo-Specific Notes
-
-- Do not edit generated output in `.next/`
-- Ignore macOS artifact files like `._*` and `.DS_Store`
-- Structured memory lives in `memory/structured-memory.sqlite`
-- Qdrant is still part of the active architecture
-- The memory API and audit tools are part of the intended contributor workflow, not just internal debugging
-- Runtime identity and memory files are gitignored and should stay out of public commits
-- Cecil now distinguishes seed-stated memory, public-corpus facts, public-corpus inference, and private conversation memory
+- If adding a new capability, wire it into `cecil/client.ts`, the API routes, and the MCP server.
+- See [docs/conventions.md](docs/conventions.md) for code style and naming.
 
 ## Pull Requests
 
-Please include:
-
-- what changed
-- why it changed
-- how you tested it
-- whether memory behavior changed
-- whether prompt/retrieval behavior changed
-
-Small, clean PRs are much easier to review than broad speculative ones.
-
-## Issues And Proposals
-
-If you open an issue or proposal, include enough detail for someone else to reproduce or evaluate it.
-
-Good issue examples:
-
-- observer wrote duplicate memories for the same session
-- ranked recall favored stale podcast chunks over recent observations
-- memory audit reports empty `events` even after successful observe calls
-
-Weak issue examples:
-
-- memory feels weird
-- bot seems off
+Include:
+- What changed and why
+- How you tested it
+- Whether memory or recall behavior changed
 
 ## License
 
-By contributing to this repo, you agree that your contributions will be licensed under the Apache License 2.0 in this repository.
+By contributing, you agree your contributions are licensed under Apache 2.0.

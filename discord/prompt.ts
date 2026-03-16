@@ -13,9 +13,10 @@ async function readPersonalityFile(name: string): Promise<string> {
 /**
  * Build the full system prompt:
  * 1. SOUL.md — personality, voice, behavior
- * 2. Cecil identity window — seed + narrative + delta + relevant observations
+ * 2. Cecil identity window — world model context + narrative + relevant observations
  * 3. AGENTS.md — team roster, channel rules, handoff protocol
- * 4. Operational constraints (including deep search instruction)
+ * 4. Meeting mode constraints (if active)
+ * 5. Operational constraints (including deep search instruction)
  */
 export async function buildSystemPrompt(
   conversationContext: string,
