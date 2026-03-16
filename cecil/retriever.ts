@@ -24,7 +24,14 @@ export async function search(
     with_payload: true,
   });
 
-  return results.map((r) => {
+  return results
+    .filter((r) => {
+      const prov = (r.payload as Record<string, unknown>)?.provenance as
+        | Record<string, unknown>
+        | undefined;
+      return !prov?.retired;
+    })
+    .map((r) => {
     const payload = (r.payload || {}) as Record<string, unknown>;
 
     return {

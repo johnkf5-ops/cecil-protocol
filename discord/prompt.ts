@@ -22,11 +22,14 @@ export async function buildSystemPrompt(
   deepSearchEnabled: boolean = true,
   meetingState?: MeetingState | null
 ): Promise<string> {
-  const [soul, agents, identityWindow] = await Promise.all([
+  const isMeeting = !!meetingState?.active;
+
+  const promises: [Promise<string>, Promise<string | null>, Promise<string>] = [
     readPersonalityFile("SOUL.md"),
-    readPersonalityFile("AGENTS.md"),
+    isMeeting ? readPersonalityFile("AGENTS.md") : Promise.resolve(null),
     assembleIdentityWindow(conversationContext),
-  ]);
+  ];
+  const [soul, agents, identityWindow] = await Promise.all(promises);
 
   const parts: string[] = [];
 
@@ -36,7 +39,9 @@ export async function buildSystemPrompt(
     parts.push("=== MEMORY ===\n" + identityWindow);
   }
 
-  parts.push("=== TEAM PROTOCOL ===\n" + agents);
+  if (agents) {
+    parts.push("=== TEAM PROTOCOL ===\n" + agents);
+  }
 
   // Meeting mode injection
   if (meetingState?.active) {
@@ -72,6 +77,7 @@ export async function buildSystemPrompt(
     `- You are in a Discord group chat. Messages from other agents are prefixed with [AgentName].`,
     `- Messages from the human have no prefix.`,
     `- Be concise. Target ${MAX_TOKENS} tokens max.`,
+    `- ZERO FABRICATION RULE: You may ONLY state things that appear in your MEMORY section above or in the conversation history. If information is not there, DO NOT ANSWER — use [SEARCH:] or [WEBSEARCH:] instead. NEVER invent details, guess at answers, make up recommendations, or fill gaps with plausible-sounding fiction. This includes names, places, events, preferences, anecdotes, and real-world recommendations (restaurants, products, services). If you don't have the answer in memory, SEARCH for it.`,
   ];
 
   if (!meetingState?.active) {
@@ -82,11 +88,20 @@ export async function buildSystemPrompt(
 
   if (deepSearchEnabled && !meetingState?.active) {
     constraints.push(
-      `- DEEP SEARCH: If the user asks a specific factual question about their past, their podcasts, interviews, personal details, or anything you're not confident about from your memory above, output ONLY the text [SEARCH: your search query] as your entire response. Use a keyword-rich query that targets the specific information needed. Examples:`,
-      `  - "Do I have a wife?" → [SEARCH: wife family partner spouse daughters personal life]`,
+      `- DEEP SEARCH (MANDATORY): When the user asks ANY question about their personal life, history, preferences, family, opinions, career details, or anything factual about themselves, you MUST output ONLY the text [SEARCH: your search query] as your ENTIRE response. Do not attempt to answer from memory. Do not guess. Just search. Examples:`,
+      `  - "What's my favorite food?" → [SEARCH: favorite food preferences meals eating]`,
+      `  - "Do I have a wife?" → [SEARCH: wife family partner spouse personal life]`,
       `  - "What did I say about AI?" → [SEARCH: opinions AI artificial intelligence future]`,
       `  - "When did I get into this?" → [SEARCH: origin story career beginning early start]`,
-      `  Do NOT search for things you already know from your memory context above. Only search when you genuinely need more information.`
+      `  - "What's my daughter's name?" → [SEARCH: daughter children kids family names]`,
+      `  The ONLY time you skip the search is when the user is asking for your opinion, brainstorming, or having a general conversation that isn't about their personal facts.`,
+      `- WEB SEARCH (MANDATORY): When the user asks about current events, news, public information, recommendations, prices, scores, weather, restaurants, reviews, or ANYTHING that requires real-world knowledge you don't have in your MEMORY section, output ONLY the text [WEBSEARCH: your search query] as your ENTIRE response. Do not guess. Do not make up recommendations. Just search. Examples:`,
+      `  - "What's Bitcoin at right now?" → [WEBSEARCH: Bitcoin price today March 2026]`,
+      `  - "What happened in the news today?" → [WEBSEARCH: top news today March 2026]`,
+      `  - "Who won the game last night?" → [WEBSEARCH: NBA scores last night]`,
+      `  - "Best restaurant in Las Vegas?" → [WEBSEARCH: best restaurants Las Vegas 2026]`,
+      `  - "What's the weather?" → [WEBSEARCH: weather Las Vegas today]`,
+      `  Use [SEARCH: ...] for personal/memory questions. Use [WEBSEARCH: ...] for world knowledge, recommendations, and current events.`
     );
   }
 

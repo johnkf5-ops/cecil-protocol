@@ -18,11 +18,9 @@ async function readFileOrNull(filePath: string): Promise<string | null> {
 export async function assembleIdentityWindow(
   conversationContext?: string
 ): Promise<string> {
-  const [seed, profile, narrative, delta] = await Promise.all([
+  const [seed, narrative] = await Promise.all([
     readFileOrNull(path.join(IDENTITY_DIR, "seed.md")),
-    readFileOrNull(path.join(IDENTITY_DIR, "profile.md")),
     readFileOrNull(path.join(IDENTITY_DIR, "narrative.md")),
-    readFileOrNull(path.join(IDENTITY_DIR, "delta.md")),
   ]);
 
   if (!seed) {
@@ -33,16 +31,8 @@ export async function assembleIdentityWindow(
 
   parts.push("=== IDENTITY SEED ===\n" + seed);
 
-  if (profile) {
-    parts.push("=== PUBLIC PROFILE ===\n" + profile);
-  }
-
   if (narrative) {
     parts.push("=== NARRATIVE ===\n" + narrative);
-  }
-
-  if (delta) {
-    parts.push("=== DELTA ===\n" + delta);
   }
 
   if (conversationContext) {
@@ -52,7 +42,7 @@ export async function assembleIdentityWindow(
     }
   }
 
-  const recentObservations = await getRecentByType("observation", 5);
+  const recentObservations = await getRecentByType("observation", 3);
   if (recentObservations.length > 0) {
     const recentText = recentObservations
       .map((r) => `- [${r.metadata.timestamp}] ${r.text}`)

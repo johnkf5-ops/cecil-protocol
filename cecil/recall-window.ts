@@ -6,7 +6,6 @@ const DEFAULT_RECALL_TYPES: MemoryType[] = [
   "conversation",
   "observation",
   "fact",
-  "podcast",
   "milestone",
 ];
 

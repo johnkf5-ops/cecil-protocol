@@ -8,6 +8,7 @@ import { onResponse } from "./session";
 import { chatCompletion } from "../cecil/llm";
 import { initCollection } from "../cecil/embedder";
 import { deepSearch } from "../cecil/deep-search";
+import { webSearch } from "../cecil/web-search";
 import {
   startMeeting,
   endMeeting,
@@ -207,8 +208,41 @@ async function handleLLMResponse(
     }
   }
 
+  // Check for web search marker
+  const webSearchMatch = (!meeting?.active)
+    ? response.match(/\[WEBSEARCH:\s*(.+?)\]/)
+    : null;
+  if (webSearchMatch) {
+    const webQuery = webSearchMatch[1].trim();
+    console.log(`[bot] Web search triggered: "${webQuery}"`);
+
+    await channel.sendTyping();
+
+    const webResult = await webSearch(webQuery);
+    console.log(`[bot] Web search returned ${webResult.results.length} results`);
+
+    if (webResult.results.length > 0) {
+      const webPrompt = await buildDeepSearchPrompt(
+        context,
+        `=== WEB SEARCH RESULTS ===\nQuery: "${webQuery}"\n\n${webResult.formattedContext}`
+      );
+
+      await channel.sendTyping();
+
+      response = await chatCompletion({
+        system: webPrompt,
+        messages: history,
+        maxTokens: MAX_TOKENS,
+      });
+
+      console.log(`[bot] Post-web-search LLM returned ${response.length} chars`);
+    } else {
+      response = "Web search came back empty. Try rephrasing or give me more context.";
+    }
+  }
+
   // Strip any remaining search markers (safety net)
-  response = response.replace(/\[SEARCH:\s*.+?\]/g, "").trim();
+  response = response.replace(/\[SEARCH:\s*.+?\]/g, "").replace(/\[WEBSEARCH:\s*.+?\]/g, "").trim();
 
   // Strip any LLM-generated @mentions (code handles all tagging)
   response = response.replace(/<@!?\d+>/g, "").replace(/<@[^>]*>/g, "").trim();
@@ -292,11 +326,11 @@ client.on(Events.MessageCreate, (message) => {
     return;
   }
 
-  // Only respond in #war-room
-  if (message.channelId !== WAR_ROOM_ID) return;
-
   const channel = message.channel as TextChannel;
   const meeting = getMeeting();
+
+  // Meeting commands only work in #war-room
+  const inWarRoom = message.channelId === WAR_ROOM_ID;
 
   // --- !help command (always available) ---
   if (/^!help\b/i.test(message.content)) {
@@ -344,9 +378,9 @@ client.on(Events.MessageCreate, (message) => {
     return;
   }
 
-  // --- !meet <topic> (start a meeting) ---
+  // --- !meet <topic> (start a meeting, #war-room only) ---
   const meetMatch = message.content.match(MEET_RE);
-  if (meetMatch && !message.author.bot) {
+  if (meetMatch && !message.author.bot && inWarRoom) {
     if (meeting?.active) {
       channel.send("Meeting already in progress. Use `!stop` to end it first.");
       return;
@@ -363,8 +397,8 @@ client.on(Events.MessageCreate, (message) => {
     return;
   }
 
-  // --- !wrap (trigger closing round early) ---
-  if (WRAP_RE.test(message.content) && !message.author.bot) {
+  // --- !wrap (trigger closing round early, #war-room only) ---
+  if (WRAP_RE.test(message.content) && !message.author.bot && inWarRoom) {
     if (!meeting?.active) {
       channel.send("No meeting in progress.");
       return;
@@ -379,8 +413,8 @@ client.on(Events.MessageCreate, (message) => {
     return;
   }
 
-  // --- !stop (hard stop) ---
-  if (STOP_RE.test(message.content) && !message.author.bot) {
+  // --- !stop (hard stop, #war-room only) ---
+  if (STOP_RE.test(message.content) && !message.author.bot && inWarRoom) {
     if (meeting?.active) {
       endMeeting();
       console.log("[bot] Meeting stopped by !stop");
@@ -391,8 +425,8 @@ client.on(Events.MessageCreate, (message) => {
     return;
   }
 
-  // --- !status (show meeting state) ---
-  if (STATUS_RE.test(message.content) && !message.author.bot) {
+  // --- !status (show meeting state, #war-room only) ---
+  if (STATUS_RE.test(message.content) && !message.author.bot && inWarRoom) {
     if (!meeting?.active) {
       channel.send("No meeting in progress. Brain twin mode active.");
       return;
@@ -410,8 +444,8 @@ client.on(Events.MessageCreate, (message) => {
     return;
   }
 
-  // --- !approve (hand off to spec agent in #specs, end meeting) ---
-  if (APPROVE_RE.test(message.content) && !message.author.bot) {
+  // --- !approve (hand off to spec agent in #specs, #war-room only) ---
+  if (APPROVE_RE.test(message.content) && !message.author.bot && inWarRoom) {
     console.log("[bot] !approve triggered");
     if (!meeting?.active) {
       channel.send("No meeting in progress.");
@@ -495,8 +529,8 @@ client.on(Events.MessageCreate, (message) => {
     return;
   }
 
-  // --- During active meeting: respond to ALL bot messages (agent responses) ---
-  if (meeting?.active && message.author.bot) {
+  // --- During active meeting: respond to ALL bot messages in #war-room (agent responses) ---
+  if (meeting?.active && message.author.bot && inWarRoom) {
     console.log(
       `[bot] Meeting: agent response from ${message.author.displayName}: ${message.content.slice(0, 80)}`
     );

@@ -12,6 +12,7 @@ export type MemorySourceType =
   | "observer_synthesis"
   | "podcast_ingest"
   | "fact_extraction"
+  | "direct_correction"
   | "unknown";
 
 export interface MemoryMetadata {
