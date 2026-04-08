@@ -2,14 +2,16 @@
 
 ## Overview
 
-Cecil is a Next.js application with a memory engine, observer pipeline, world model, and multiple integration surfaces (web UI, Discord, REST API, MCP).
+Cecil is a Next.js application with four core systems — **Storage** (Qdrant + SQLite), **Observe** (extraction + synthesis), **Recall** (ranked retrieval with domain matching and evidence tiers), and **Maintain** (dedup, quality, refresh) — plus multiple integration surfaces (web UI, Discord, REST API, MCP).
 
 ```
-User input → Chat → LLM → Response
-                ↓
-            Observer → World Model extraction
-                ↓
-        Memory (Qdrant + SQLite)
+User input → Chat → Recall (ranked context) → LLM → Response
+                                                 ↓
+                                    Observer → World Model extraction
+                                                 ↓
+                                    Storage (Qdrant + SQLite + Markdown)
+                                                 ↓
+                                    Maintenance (dedup, quality, refresh)
 ```
 
 ## Data Flow
@@ -102,7 +104,7 @@ Two core tables plus the world model:
 
 ### Markdown (Human-Readable)
 
-Everything is mirrored to `memory/` as markdown files for direct inspection:
+Conversations and observations are mirrored to `memory/` as markdown files for direct inspection:
 - `memory/conversations/` — Session logs
 - `memory/observations/` — Synthesis results
 - `identity/narrative.md` — Evolving understanding

@@ -121,17 +121,12 @@ Run `npm run dev` and hit the endpoints:
 
 ## How it works
 
-Every conversation flows through three layers:
+Cecil has four core systems:
 
-1. **Chat** — Cecil responds using its accumulated memory as context
-2. **Observe** — After each session, the observer extracts entities, beliefs, open loops, and contradictions into a structured world model. Conversations are embedded at three granularities: full session, individual user messages, and Q+A exchange pairs.
-3. **Synthesize** — Every few sessions, an LLM pass detects patterns, updates the narrative, and computes drift
-
-Memory is stored in two systems simultaneously:
-- **Qdrant** for semantic search (finding similar memories)
-- **SQLite** for structured state (knowing what it knows, where it came from, and what changed)
-
-Every memory is auto-tagged with a **domain** (technology, business, personal, creative, health, education, finance, entertainment, or general). Domain-matched results get a scoring boost during retrieval — no relevant memories are filtered out, but topically aligned ones surface higher.
+1. **Storage** — Qdrant vector database (local) for semantic search + SQLite for structured state, provenance, and lifecycle history. Every memory is auto-tagged with a **domain** (technology, business, personal, creative, health, education, finance, entertainment, or general).
+2. **Observe** — After each session, the observer embeds conversations at three granularities (full session, individual messages, Q+A exchange pairs), extracts entities, beliefs, open loops, and contradictions into a structured world model. Every few sessions, a deeper synthesis pass detects patterns, updates the narrative, and computes drift.
+3. **Recall** — Ranked retrieval combining TF-IDF lexical scoring, semantic search, domain matching, evidence tiers, quality weighting, and recency boosting. Domain-matched results surface higher. Every recalled memory is tagged with its source and confidence level.
+4. **Maintain** — Deduplicates memory (exact + semantic), retires low-quality entries, detects stale commitments, refreshes the world model. Corrections are immediate — old fact retired, new fact embedded at highest priority.
 
 ## What Cecil tracks
 
