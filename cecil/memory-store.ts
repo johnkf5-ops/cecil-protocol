@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
 import type { MemorySourceType, MemoryType } from "./types";
+import { detectDomain } from "./domain";
 
 let cachedSubjectName: string | null = null;
 let cachedSubjectTokens: string[] = [];
@@ -97,6 +98,7 @@ export interface StructuredMemoryWrite {
   sourcePath?: string;
   sourceId?: string;
   sourceEpisode?: string;
+  domain?: string;
   qualityScore?: number;
   provenance?: Record<string, unknown>;
 }
@@ -110,6 +112,7 @@ interface StructuredMemoryRowRecord {
   source_path: string | null;
   source_id: string | null;
   source_episode: string | null;
+  domain: string | null;
   provenance_json: string;
   quality_score: number;
   created_at: string;
@@ -127,6 +130,7 @@ export interface StructuredMemoryRecord {
   sourcePath?: string;
   sourceId?: string;
   sourceEpisode?: string;
+  domain: string;
   provenance: Record<string, unknown>;
   qualityScore: number;
   createdAt: string;
@@ -204,6 +208,7 @@ function mapRow(
     sourcePath: row.source_path ?? undefined,
     sourceId: row.source_id ?? undefined,
     sourceEpisode: row.source_episode ?? undefined,
+    domain: row.domain ?? "general",
     provenance: parseProvenanceJson(row.provenance_json),
     qualityScore: row.quality_score,
     createdAt: row.created_at,
@@ -221,7 +226,7 @@ function mapRow(
   return baseRecord;
 }
 
-function ensureColumn(
+export function ensureColumn(
   db: DatabaseSync,
   tableName: string,
   columnName: string,
@@ -465,6 +470,8 @@ export async function initStructuredMemory(): Promise<void> {
 
   ensureColumn(db, "memory_current", "source_episode", "TEXT");
   ensureColumn(db, "memory_events", "source_episode", "TEXT");
+  ensureColumn(db, "memory_current", "domain", "TEXT DEFAULT 'general'");
+  ensureColumn(db, "memory_events", "domain", "TEXT DEFAULT 'general'");
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_memory_current_type
@@ -479,6 +486,8 @@ export async function initStructuredMemory(): Promise<void> {
       ON memory_current (source_episode, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_memory_events_source_episode
       ON memory_events (source_episode, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_memory_current_domain
+      ON memory_current (domain, updated_at DESC);
   `);
 
   schemaInitialized = true;
@@ -503,11 +512,12 @@ export async function recordMemoryWrite(
       source_path,
       source_id,
       source_episode,
+      domain,
       provenance_json,
       quality_score,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(memory_key) DO UPDATE SET
       memory_type = excluded.memory_type,
       text = excluded.text,
@@ -516,6 +526,7 @@ export async function recordMemoryWrite(
       source_path = excluded.source_path,
       source_id = excluded.source_id,
       source_episode = excluded.source_episode,
+      domain = excluded.domain,
       provenance_json = excluded.provenance_json,
       quality_score = excluded.quality_score,
       updated_at = excluded.updated_at
@@ -533,10 +544,11 @@ export async function recordMemoryWrite(
       source_path,
       source_id,
       source_episode,
+      domain,
       provenance_json,
       quality_score,
       created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const deleteCurrent = db.prepare(`
@@ -559,6 +571,7 @@ export async function recordMemoryWrite(
         write.sourcePath ?? null,
         write.sourceId ?? null,
         write.sourceEpisode ?? null,
+        write.domain ?? "general",
         provenanceJson,
         qualityScore,
         write.timestamp,
@@ -577,6 +590,7 @@ export async function recordMemoryWrite(
       write.sourcePath ?? null,
       write.sourceId ?? null,
       write.sourceEpisode ?? null,
+      write.domain ?? "general",
       provenanceJson,
       qualityScore,
       write.timestamp
@@ -608,6 +622,7 @@ export async function getCurrentMemories(
         source_path,
         source_id,
         source_episode,
+        domain,
         provenance_json,
         quality_score,
         created_at,
@@ -643,6 +658,7 @@ export async function getMemoryEvents(
         source_path,
         source_id,
         source_episode,
+        domain,
         provenance_json,
         quality_score,
         created_at
@@ -672,6 +688,8 @@ export async function getRankedRecallCandidates(
     VALUE_PRIORITY_INTENT_TOKENS.has(token)
   );
   const identityValueQuery = isIdentityValueQuery(normalizedQuery, tokens);
+  const queryDomain = detectDomain(query);
+  const isQuestion = /\?$|^(what|how|when|where|why|who|did)\b/i.test(query);
   const { clause, params } = buildWhereClause(options);
   const limit = options.limit ?? 20;
   const poolLimit = Math.max(limit * 8, 80);
@@ -700,6 +718,7 @@ export async function getRankedRecallCandidates(
         source_path,
         source_id,
         source_episode,
+        domain,
         provenance_json,
         quality_score,
         created_at,
@@ -858,6 +877,16 @@ export async function getRankedRecallCandidates(
 
       if (lexicalHits === 1) {
         recallScore -= 0.1;
+      }
+
+      // Domain boost
+      if (queryDomain !== "general" && record.domain === queryDomain) {
+        recallScore += 0.5;
+      }
+
+      // Exchange-pair boost for questions
+      if (isQuestion && record.provenance?.granularity === "exchange-pair") {
+        recallScore += 0.3;
       }
 
       return {

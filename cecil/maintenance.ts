@@ -22,6 +22,8 @@ import {
   recordContradiction,
   findEntityByName,
   listOpenLoops,
+  reviseBelief,
+  listBeliefs,
 } from "./world-model";
 import { search } from "./retriever";
 import { randomUUID } from "node:crypto";
@@ -29,6 +31,7 @@ import { randomUUID } from "node:crypto";
 export interface MaintenanceReport {
   exactDedups: number;
   semanticDedups: number;
+  semanticDedupProcessed: number;
   qualityRetired: number;
   staleLoops: number;
   contradictionsRefreshed: number;
@@ -40,6 +43,7 @@ export interface MaintenanceReport {
 
 export interface MaintenanceOptions {
   dryRun?: boolean;
+  maxSemanticDedup?: number;
   steps?: (
     | "dedup"
     | "semantic-dedup"
@@ -118,70 +122,79 @@ async function exactDedup(dryRun: boolean): Promise<number> {
 
 // ── Step 2: Semantic dedup ───────────────────────────────────────────────────
 
-async function semanticDedup(dryRun: boolean): Promise<number> {
+async function semanticDedup(
+  dryRun: boolean,
+  maxMemories?: number
+): Promise<{ merged: number; processed: number }> {
   const memories = await getCurrentMemories({ limit: 500 });
   let merged = 0;
 
-  // For each memory, search for near-duplicates
+  const toProcess = maxMemories ? memories.slice(0, maxMemories) : memories;
+  const BATCH_SIZE = 50;
   const processed = new Set<string>();
-  for (const mem of memories.slice(0, 100)) {
-    if (processed.has(mem.memoryKey)) continue;
 
-    try {
-      const similar = await search(mem.text, {
-        limit: 5,
-        scoreThreshold: 0.95,
-      });
+  for (let batchStart = 0; batchStart < toProcess.length; batchStart += BATCH_SIZE) {
+    const batch = toProcess.slice(batchStart, batchStart + BATCH_SIZE);
 
-      for (const result of similar) {
-        const resultKey =
-          result.metadata.sourceId || result.metadata.sessionId || result.id;
-        if (!resultKey || resultKey === mem.memoryKey) continue;
-        if (processed.has(resultKey)) continue;
+    for (const mem of batch) {
+      if (processed.has(mem.memoryKey)) continue;
 
-        // Found a near-duplicate — retire the lower quality one
-        const matchingMem = memories.find(
-          (m) =>
-            m.memoryKey === resultKey ||
-            m.sourceId === resultKey ||
-            m.sessionId === resultKey
-        );
+      try {
+        const similar = await search(mem.text, {
+          limit: 5,
+          scoreThreshold: 0.95,
+        });
 
-        if (matchingMem && matchingMem.memoryKey !== mem.memoryKey) {
-          const [keep, retire] =
-            mem.qualityScore >= matchingMem.qualityScore
-              ? [mem, matchingMem]
-              : [matchingMem, mem];
+        for (const result of similar) {
+          const resultKey =
+            result.metadata.sourceId || result.metadata.sessionId || result.id;
+          if (!resultKey || resultKey === mem.memoryKey) continue;
+          if (processed.has(resultKey)) continue;
 
-          if (!dryRun) {
-            await recordMemoryWrite({
-              eventId: `maintenance:semantic-dedup:${randomUUID().slice(0, 8)}`,
-              memoryKey: retire.memoryKey,
-              memoryType: retire.memoryType,
-              action: "retire",
-              text: retire.text,
-              timestamp: new Date().toISOString(),
-              sourceType: retire.sourceType,
-              qualityScore: retire.qualityScore,
-              provenance: {
-                retiredBy: "maintenance.semantic-dedup",
-                keptKey: keep.memoryKey,
-                similarity: result.score,
-              },
-            });
+          // Found a near-duplicate — retire the lower quality one
+          const matchingMem = memories.find(
+            (m) =>
+              m.memoryKey === resultKey ||
+              m.sourceId === resultKey ||
+              m.sessionId === resultKey
+          );
+
+          if (matchingMem && matchingMem.memoryKey !== mem.memoryKey) {
+            const [keep, retire] =
+              mem.qualityScore >= matchingMem.qualityScore
+                ? [mem, matchingMem]
+                : [matchingMem, mem];
+
+            if (!dryRun) {
+              await recordMemoryWrite({
+                eventId: `maintenance:semantic-dedup:${randomUUID().slice(0, 8)}`,
+                memoryKey: retire.memoryKey,
+                memoryType: retire.memoryType,
+                action: "retire",
+                text: retire.text,
+                timestamp: new Date().toISOString(),
+                sourceType: retire.sourceType,
+                qualityScore: retire.qualityScore,
+                provenance: {
+                  retiredBy: "maintenance.semantic-dedup",
+                  keptKey: keep.memoryKey,
+                  similarity: result.score,
+                },
+              });
+            }
+            processed.add(retire.memoryKey);
+            merged++;
           }
-          processed.add(retire.memoryKey);
-          merged++;
         }
+      } catch {
+        // Qdrant may not be running — skip semantic dedup
       }
-    } catch {
-      // Qdrant may not be running — skip semantic dedup
-    }
 
-    processed.add(mem.memoryKey);
+      processed.add(mem.memoryKey);
+    }
   }
 
-  return merged;
+  return { merged, processed: processed.size };
 }
 
 // ── Step 3: Quality sweep ────────────────────────────────────────────────────
@@ -334,12 +347,27 @@ async function beliefRefresh(dryRun: boolean): Promise<number> {
   const now = new Date().toISOString();
   let count = 0;
 
+  const existingBeliefs = listBeliefs("active");
+
   for (const b of extracted.beliefs) {
     if (!b.content) continue;
     const entityId = b.aboutEntity
       ? findEntityByName(b.aboutEntity)?.entityId ?? null
       : null;
-    recordBelief(b.content, entityId, recentMemories[0]?.memoryKey ?? "unknown", now);
+
+    // Check if this revises an existing belief
+    const overlapping = existingBeliefs.find(
+      (existing) =>
+        existing.entityId === entityId &&
+        existing.content.length > 0 &&
+        b.content.length > 0 &&
+        normalizeText(existing.content).includes(normalizeText(b.content).slice(0, 40))
+    );
+    if (overlapping) {
+      reviseBelief(overlapping.beliefId, b.content, recentMemories[0]?.memoryKey ?? "unknown", now);
+    } else {
+      recordBelief(b.content, entityId, recentMemories[0]?.memoryKey ?? "unknown", now);
+    }
     count++;
   }
 
@@ -362,9 +390,9 @@ export async function runMaintenance(
 
   // Steps 1-4: No LLM calls
   const exactDedups = runStep("dedup") ? await exactDedup(dryRun) : 0;
-  const semanticDedups = runStep("semantic-dedup")
-    ? await semanticDedup(dryRun)
-    : 0;
+  const { merged: semanticDedups, processed: semanticDedupProcessed } = runStep("semantic-dedup")
+    ? await semanticDedup(dryRun, options.maxSemanticDedup)
+    : { merged: 0, processed: 0 };
   const qualityRetired = runStep("quality") ? await qualitySweep(dryRun) : 0;
   const staleLoops = runStep("stale-loops") ? markStaleLoops(dryRun) : 0;
 
@@ -379,6 +407,7 @@ export async function runMaintenance(
   return {
     exactDedups,
     semanticDedups,
+    semanticDedupProcessed,
     qualityRetired,
     staleLoops,
     contradictionsRefreshed,

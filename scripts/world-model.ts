@@ -52,7 +52,10 @@ async function main() {
     console.log(`\n=== ACTIVE BELIEFS (${beliefs.length}) ===\n`);
     for (const b of beliefs) {
       console.log(`  • ${b.content}`);
-      console.log(`    (stated: ${b.lastStated.slice(0, 10)})\n`);
+      const parts = [`stated: ${b.lastStated.slice(0, 10)}`];
+      if (b.validFrom) parts.push(`from: ${b.validFrom.slice(0, 10)}`);
+      if (b.validTo) parts.push(`to: ${b.validTo.slice(0, 10)}`);
+      console.log(`    (${parts.join(", ")})\n`);
     }
     return;
   }

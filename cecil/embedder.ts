@@ -57,6 +57,16 @@ export async function initCollection(): Promise<void> {
   } catch {
     // Index already exists — ignore
   }
+
+  // Ensure domain index exists
+  try {
+    await client.createPayloadIndex(COLLECTION_NAME, {
+      field_name: "domain",
+      field_schema: "keyword",
+    });
+  } catch {
+    // Index already exists — ignore
+  }
 }
 
 async function embedText(text: string): Promise<number[]> {

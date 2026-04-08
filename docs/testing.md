@@ -18,7 +18,8 @@ This runs 16 tests covering:
 | `worldModel.summary()` | World model query works |
 | `worldModel.entities()` | Entity listing |
 | `worldModel.entities('person')` | Entity filtering by kind |
-| `worldModel.beliefs()` | Belief listing |
+| `worldModel.beliefs()` | Belief listing (includes validFrom/validTo) |
+| `worldModel.beliefsAsOf(date)` | Temporal belief query |
 | `worldModel.openLoops()` | Open loop listing |
 | `worldModel.contradictions()` | Contradiction listing |
 | `recall()` | Memory search returns results |
@@ -89,6 +90,7 @@ npm run reflect -- --patterns
 
 ```bash
 npm run maintenance -- --dry-run
+npm run maintenance -- --dry-run --semantic-dedup   # Verify semantic dedup reports processed count
 ```
 
 ### Verify MCP server starts
@@ -114,6 +116,26 @@ Reports:
 - Optional ranked recall preview
 
 This is the first thing to check when Cecil's answers feel generic or blank.
+
+### Verify temporal beliefs
+
+```bash
+npm run world-model -- --beliefs    # Should show from:/to: fields on beliefs
+```
+
+### Verify domain tagging
+
+After a conversation, check that memories have domain tags:
+```bash
+npm run memory:inspect              # Look for domain field in output
+```
+
+### Verify exchange pairs
+
+After a multi-turn conversation, check for exchange-pair memory keys:
+```bash
+sqlite3 memory/structured-memory.sqlite "SELECT memory_key FROM memory_current WHERE memory_key LIKE '%pair%' LIMIT 5"
+```
 
 ## Testing Changes to Recall
 

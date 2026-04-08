@@ -5,6 +5,7 @@
  * Options:
  *   --dry-run          Show what would happen without making changes
  *   --dedup            Only run dedup steps (exact + semantic)
+ *   --semantic-dedup   Only run semantic dedup
  *   --quality          Only run quality sweep
  *   --stale-loops      Only run stale loop detection
  *   --contradictions   Only run contradiction refresh
@@ -22,6 +23,7 @@ const jsonOutput = args.includes("--json");
 
 const stepFlags: Record<string, MaintenanceOptions["steps"] extends (infer T)[] | undefined ? T : never> = {
   "--dedup": "dedup" as const,
+  "--semantic-dedup": "semantic-dedup" as const,
   "--quality": "quality" as const,
   "--stale-loops": "stale-loops" as const,
   "--contradictions": "contradictions" as const,
@@ -56,6 +58,7 @@ async function main() {
 
   console.log(`Exact dedup:               ${report.exactDedups} retired`);
   console.log(`Semantic dedup:            ${report.semanticDedups} merged`);
+  console.log(`Semantic dedup checked:    ${report.semanticDedupProcessed} memories`);
   console.log(`Quality sweep:             ${report.qualityRetired} retired (< 0.4)`);
   console.log(`Stale open loops:          ${report.staleLoops} marked stale (> 30 days)`);
   console.log(`Contradictions refreshed:  ${report.contradictionsRefreshed}`);

@@ -3,6 +3,7 @@ import path from "path";
 import { chatCompletion } from "./llm";
 import { embed, embedBatch, initCollection } from "./embedder";
 import { recordMemoryWrite } from "./memory-store";
+import { detectDomain } from "./domain";
 import { getRecentByType } from "./retriever";
 import { ensureWorldModelSchema, extractWorldData, upsertEntity, recordEntityMention, recordBelief, recordOpenLoop, recordContradiction, findEntityByName, getWorldModelSummary, listEntities, listBeliefs } from "./world-model";
 import type { Message, SessionCounter } from "./types";
@@ -79,6 +80,7 @@ async function lightPass(
   // Embed the full conversation as one vector
   const fullText = messages.map((m) => `${m.role}: ${m.content}`).join("\n");
   const now = new Date().toISOString();
+  const domain = detectDomain(fullText);
 
   await embed(fullText, {
     type: "conversation",
@@ -87,6 +89,7 @@ async function lightPass(
     sourcePath: `memory/conversations/${sessionId}.md`,
     sourceType: "conversation_session",
     sourceId: sessionId,
+    domain,
     qualityScore: 0.65,
     provenance: {
       writer: "observer.light-pass",
@@ -107,6 +110,7 @@ async function lightPass(
     sourceType: "conversation_session",
     sourcePath: `memory/conversations/${sessionId}.md`,
     sourceId: sessionId,
+    domain,
     qualityScore: 0.65,
     provenance: {
       writer: "observer.light-pass",
@@ -128,6 +132,7 @@ async function lightPass(
           sessionId,
           sourceType: "conversation_session" as const,
           sourceId: sessionId,
+          domain,
           qualityScore: 0.55,
           provenance: {
             writer: "observer.light-pass",
@@ -136,6 +141,60 @@ async function lightPass(
         },
       }))
     );
+  }
+
+  // Embed Q+A exchange pairs for atomic retrieval
+  const exchangePairs: { text: string; pairIndex: number }[] = [];
+  for (let i = 0; i < messages.length - 1; i++) {
+    if (messages[i].role === "user" && messages[i + 1].role === "assistant") {
+      exchangePairs.push({
+        text: `user: ${messages[i].content}\nassistant: ${messages[i + 1].content}`,
+        pairIndex: exchangePairs.length,
+      });
+    }
+  }
+
+  if (exchangePairs.length > 0) {
+    await embedBatch(
+      exchangePairs.map((pair) => ({
+        text: pair.text,
+        metadata: {
+          type: "conversation" as const,
+          timestamp: now,
+          sessionId,
+          sourceType: "conversation_session" as const,
+          sourceId: sessionId,
+          domain,
+          qualityScore: 0.60,
+          provenance: {
+            writer: "observer.light-pass",
+            granularity: "exchange-pair",
+            pairIndex: pair.pairIndex,
+          },
+        },
+      }))
+    );
+
+    for (const pair of exchangePairs) {
+      await recordMemoryWrite({
+        eventId: `conversation:${sessionId}:pair-${pair.pairIndex}:captured`,
+        memoryKey: `conversation:${sessionId}:pair-${pair.pairIndex}`,
+        memoryType: "conversation",
+        action: "capture",
+        text: pair.text,
+        timestamp: now,
+        sessionId,
+        sourceType: "conversation_session",
+        sourceId: sessionId,
+        domain,
+        qualityScore: 0.60,
+        provenance: {
+          writer: "observer.light-pass",
+          granularity: "exchange-pair",
+          pairIndex: pair.pairIndex,
+        },
+      });
+    }
   }
 
   // World model extraction — extract entities, beliefs, open loops, contradictions

@@ -96,7 +96,7 @@ Two core tables plus the world model:
 **World model tables:**
 - `world_entities` — People, projects, orgs, places, topics
 - `world_entity_mentions` — Links entities to memory keys
-- `world_beliefs` — Opinions, values, preferences (active/revised/contradicted)
+- `world_beliefs` — Opinions, values, preferences (active/revised/contradicted) with temporal validity windows (`valid_from`/`valid_to`)
 - `world_open_loops` — Unresolved TODOs and follow-ups (open/resolved/stale)
 - `world_contradictions` — Conflicting statements with source references
 
@@ -120,6 +120,7 @@ Everything is mirrored to `memory/` as markdown files for direct inspection:
 | `cecil/memory-store.ts` | SQLite structured memory |
 | `cecil/embedder.ts` | Qdrant vector operations |
 | `cecil/retriever.ts` | Semantic search |
+| `cecil/domain.ts` | Heuristic domain detection for memory tagging |
 | `cecil/ranked-recall.ts` | TF-IDF weighted lexical + quality scoring |
 | `cecil/reflection.ts` | LLM-synthesized analysis of world model |
 | `cecil/maintenance.ts` | Dedup, quality sweep, stale detection, refreshes |
@@ -136,9 +137,10 @@ Two phases:
 
 ### Light Pass (every session, 1 LLM call)
 1. Write conversation to markdown log
-2. Embed full conversation + individual user messages to Qdrant
-3. Record to `memory_current` as conversation type
-4. Extract world model data (entities, beliefs, open loops, contradictions) via 1 LLM call
+2. Detect domain from conversation content (heuristic, no LLM)
+3. Embed full conversation, individual user messages, and Q+A exchange pairs to Qdrant (all tagged with domain)
+4. Record to `memory_current` as conversation type
+5. Extract world model data (entities, beliefs, open loops, contradictions) via 1 LLM call
 
 ### Full Synthesis (every N sessions, 3 additional LLM calls)
 1. Detect patterns from recent conversations + observations
@@ -151,12 +153,13 @@ Two phases:
 When Cecil responds to a message:
 
 1. Tokenize the query, filter stopwords
-2. Run TF-IDF weighted lexical search on SQLite `memory_current`
-3. Run semantic search on Qdrant for observations, facts, podcasts
-4. Merge all results, deduplicate by normalized text
-5. Apply per-type token budgets (conversations: 180, observations: 220, facts: 280, etc.)
-6. Inject world model context (contradictions, beliefs, open loops if relevant)
-7. Format with evidence tiers (DIRECT_STATEMENT, OBSERVED_PATTERN, PUBLIC_CORPUS, INFERRED)
+2. Detect query domain (heuristic)
+3. Run TF-IDF weighted lexical search on SQLite `memory_current` with domain boost (+0.5 for domain match) and exchange-pair boost (+0.3 for questions)
+4. Run semantic search on Qdrant for observations, facts, podcasts
+5. Merge all results, deduplicate by normalized text, apply domain boost (+0.3) in recall window scoring
+6. Apply per-type token budgets (conversations: 180, observations: 220, facts: 280, etc.)
+7. Inject world model context (contradictions, beliefs, open loops if relevant)
+8. Format with evidence tiers (DIRECT_STATEMENT, OBSERVED_PATTERN, PUBLIC_CORPUS, INFERRED)
 
 ## Evidence Tiers
 

@@ -35,12 +35,30 @@ memory/          Runtime memory data (gitignored)
 
 | Type | Source | Description |
 |---|---|---|
-| `conversation` | Chat sessions | Full session text |
+| `conversation` | Chat sessions | Full session text, user messages, and exchange pairs |
 | `observation` | Observer synthesis | Pattern detection results |
 | `fact` | Fact extraction | Extracted from transcripts |
 | `podcast` | Podcast ingestion | Transcript chunks |
 | `milestone` | Fact extraction | Meaningful events/experiences |
 | `seed` | Onboarding | Original identity baseline |
+
+## Memory Domains
+
+Every memory is auto-tagged with a domain via heuristic keyword detection (`cecil/domain.ts`):
+
+| Domain | Example keywords |
+|---|---|
+| `technology` | code, api, database, typescript, deploy, docker |
+| `business` | revenue, startup, strategy, investor, growth |
+| `personal` | family, partner, daughter, birthday, vacation |
+| `creative` | writing, music, art, design, novel, photography |
+| `health` | exercise, diet, sleep, therapy, meditation |
+| `education` | course, study, degree, university, training |
+| `finance` | invest, budget, tax, mortgage, crypto |
+| `entertainment` | movie, game, show, sports, netflix |
+| `general` | Default when no domain keywords match |
+
+Domain is a scoring boost in retrieval, never a filter.
 
 ## Evidence Tiers
 
@@ -65,10 +83,11 @@ When adding new memory sources, assign the correct evidence tier:
 ## Adding New Memory Sources
 
 Follow the existing pattern:
-1. Embed the content to Qdrant with appropriate metadata
-2. Record to SQLite via `recordMemoryWrite()`
-3. Write a human-readable markdown file to `memory/`
-4. Set `sourceType` and `provenance` so evidence tiers resolve correctly
+1. Detect domain via `detectDomain(text)` from `cecil/domain.ts`
+2. Embed the content to Qdrant with appropriate metadata (include `domain`)
+3. Record to SQLite via `recordMemoryWrite()` (include `domain`)
+4. Write a human-readable markdown file to `memory/`
+5. Set `sourceType` and `provenance` so evidence tiers resolve correctly
 
 ## Pull Requests
 

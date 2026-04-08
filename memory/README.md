@@ -34,7 +34,9 @@ GET /api/open-loops
 ## Storage Architecture
 
 Memory is stored in two systems simultaneously:
-- **Qdrant** — Semantic vector search
-- **SQLite** — Structured state with provenance and lifecycle history
+- **Qdrant** — Semantic vector search (384D vectors via AllMiniLM-L6-v2, indexed on type, sourceEpisode, and domain)
+- **SQLite** — Structured state with provenance, lifecycle history, and domain tagging
+
+Each memory record includes a `domain` field (technology, business, personal, creative, health, education, finance, entertainment, or general) auto-detected via keyword heuristics. The world model's `world_beliefs` table includes `valid_from`/`valid_to` columns for temporal validity tracking.
 
 The markdown files are a human-readable mirror for direct inspection. SQLite is the source of truth.

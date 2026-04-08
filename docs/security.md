@@ -32,6 +32,7 @@ Cecil makes LLM calls to whatever endpoint you configure in `LLM_BASE_URL`. By d
 - System prompts with assembled memory context
 - User messages
 - World model extraction prompts (conversation text → structured data)
+- Domain detection is heuristic (keyword regex) — no LLM call, no data sent anywhere
 - Observer synthesis prompts (conversation summaries → patterns)
 - Reflection prompts (world model data → analysis)
 

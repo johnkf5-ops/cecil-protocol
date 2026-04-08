@@ -28,6 +28,7 @@ import {
   listContradictions,
   findEntityByName,
   getWorldModelSummary,
+  beliefsAsOfDate,
   type EntityKind,
   type BeliefStatus,
   type OpenLoopStatus,
@@ -223,6 +224,11 @@ const worldModel = {
   beliefs(status?: BeliefStatus): WorldBelief[] {
     ensureWorldModelSchema();
     return listBeliefs(status);
+  },
+
+  beliefsAsOf(date: string): WorldBelief[] {
+    ensureWorldModelSchema();
+    return beliefsAsOfDate(date);
   },
 
   openLoops(status?: OpenLoopStatus): WorldOpenLoop[] {

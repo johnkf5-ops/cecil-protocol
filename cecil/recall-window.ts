@@ -1,6 +1,7 @@
 import { collectRankedRecallBundle } from "./ranked-recall";
 import { search, searchByType } from "./retriever";
 import { buildWorldModelContext, classifyQueryIntent, ensureWorldModelSchema } from "./world-model";
+import { detectDomain } from "./domain";
 import type { MemoryType, SearchResult } from "./types";
 
 const DEFAULT_RECALL_TYPES: MemoryType[] = [
@@ -290,6 +291,7 @@ export async function buildRecallWindow(
   options: RecallWindowOptions = {}
 ): Promise<RecallWindow> {
   const types = options.types ?? DEFAULT_RECALL_TYPES;
+  const queryDomain = detectDomain(query);
   const includeObservation = types.includes("observation");
   const includeFact = types.includes("fact");
   const includePodcast = types.includes("podcast");
@@ -332,7 +334,8 @@ export async function buildRecallWindow(
           timestamp: item.updatedAt,
         }),
         timestamp: item.updatedAt,
-        score: item.recallScore + computeRecencyBoost(item.updatedAt) + 0.25,
+        score: item.recallScore + computeRecencyBoost(item.updatedAt) + 0.25
+          + (queryDomain !== "general" && item.domain === queryDomain ? 0.3 : 0),
         estimatedTokens: estimateTokens(excerpt),
         source: "structured_candidate",
       };
@@ -358,7 +361,8 @@ export async function buildRecallWindow(
           timestamp: item.updatedAt,
         }),
         timestamp: item.updatedAt,
-        score: item.qualityScore + computeRecencyBoost(item.updatedAt) + 0.12,
+        score: item.qualityScore + computeRecencyBoost(item.updatedAt) + 0.12
+          + (queryDomain !== "general" && item.domain === queryDomain ? 0.3 : 0),
         estimatedTokens: estimateTokens(excerpt),
         source: "structured_current",
       };
@@ -384,7 +388,8 @@ export async function buildRecallWindow(
           timestamp: item.createdAt,
         }),
         timestamp: item.createdAt,
-        score: item.qualityScore + computeRecencyBoost(item.createdAt) + 0.08,
+        score: item.qualityScore + computeRecencyBoost(item.createdAt) + 0.08
+          + (queryDomain !== "general" && item.domain === queryDomain ? 0.3 : 0),
         estimatedTokens: estimateTokens(excerpt),
         source: "structured_event",
       };

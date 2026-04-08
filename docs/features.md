@@ -9,7 +9,7 @@ Cecil works from the first message. No onboarding ceremony required. It learns y
 Every conversation is analyzed for structured knowledge:
 
 - **Entities** — People, projects, organizations, places, recurring topics. Tracked with mention counts and first/last seen timestamps.
-- **Beliefs** — Opinions, values, preferences, principles. Tracked as active, revised, or contradicted.
+- **Beliefs** — Opinions, values, preferences, principles. Tracked as active, revised, or contradicted, with temporal validity windows (`valid_from`/`valid_to`). You can query what was believed at any point in time via `beliefsAsOf(date)`.
 - **Open Loops** — Things you said you'd do. Tracked as open, resolved, or stale (>30 days).
 - **Contradictions** — When you say something that conflicts with an earlier statement, both are recorded with source references.
 
@@ -31,14 +31,14 @@ Run via CLI (`npm run reflect`), API (`POST /api/reflect`), or programmatically 
 Automated pipeline for memory hygiene:
 
 1. **Exact dedup** — Normalize text, keep higher quality, retire duplicates
-2. **Semantic dedup** — Cosine similarity >0.95 via Qdrant, merge near-duplicates
+2. **Semantic dedup** — Cosine similarity >0.95 via Qdrant, merge near-duplicates. Processes all memories in batches of 50 (no longer capped at 100). Reports how many memories were checked.
 3. **Quality sweep** — Retire memories with quality score <0.4
 4. **Stale loop detection** — Open loops >30 days marked stale
 5. **Contradiction refresh** — Extract new contradictions from recent conversations
 6. **Entity refresh** — Rebuild entity mentions from recent memories
-7. **Belief refresh** — Check if active beliefs have been revised
+7. **Belief refresh** — Check if active beliefs have been revised. Detects overlapping beliefs for the same entity and uses `reviseBelief()` to properly close the old validity window instead of creating duplicates.
 
-Steps 1-4 require no LLM calls. Steps 5-7 use batched LLM extraction. Supports `--dry-run` to preview changes.
+Steps 1-4 require no LLM calls. Steps 5-7 use batched LLM extraction. Supports `--dry-run` to preview changes. Individual steps can be run with `--semantic-dedup`, `--beliefs`, etc.
 
 ## Evidence-Aware Recall
 
@@ -62,11 +62,26 @@ When Cecil doesn't have enough context to answer confidently, it triggers a `[SE
 3. Re-prompts the LLM with the search results
 4. Returns an evidence-backed answer
 
+## Domain Tagging
+
+Every memory is automatically tagged with a domain: technology, business, personal, creative, health, education, finance, entertainment, or general. Detection uses keyword heuristics (no LLM call).
+
+Domain-matched results get a scoring boost during retrieval (+0.5 in ranked recall, +0.3 in recall window). This is a **boost only** — non-matching memories are never excluded.
+
+## Exchange-Pair Chunking
+
+Conversations are embedded at three granularities:
+- **Full session** (quality 0.65) — broad context
+- **Individual user messages** (quality 0.55) — granular user intent
+- **Q+A exchange pairs** (quality 0.60) — atomic user question + assistant answer
+
+Exchange pairs get a scoring boost when the query looks like a question, ensuring "what did Cecil say about X?" queries find the relevant answer context.
+
 ## Observer Pipeline
 
 After every chat session:
 
-- **Light pass** (1 LLM call): Log conversation, embed to Qdrant, record to SQLite, extract world model data
+- **Light pass** (1 LLM call): Log conversation, detect domain, embed at 3 granularities (session + user messages + exchange pairs), record to SQLite, extract world model data
 - **Full synthesis** (every N sessions, 3 LLM calls): Detect patterns, update narrative, compute drift, write observations
 
 The synthesis interval is configurable via `SYNTHESIS_INTERVAL` in `.env`.

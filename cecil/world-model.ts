@@ -11,6 +11,7 @@ import { chatCompletion } from "./llm";
 import {
   initStructuredMemory,
   getCurrentMemories,
+  ensureColumn,
   STRUCTURED_MEMORY_DB_PATH,
 } from "./memory-store";
 
@@ -45,6 +46,8 @@ export interface WorldBelief {
   firstStated: string;
   lastStated: string;
   sourceMemoryKeys: string; // JSON array of memory keys
+  validFrom: string | null;
+  validTo: string | null;
 }
 
 export interface WorldOpenLoop {
@@ -174,6 +177,9 @@ export function ensureWorldModelSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_world_contradictions_resolved
       ON world_contradictions (resolved);
   `);
+
+  ensureColumn(db, "world_beliefs", "valid_from", "TEXT");
+  ensureColumn(db, "world_beliefs", "valid_to", "TEXT");
 }
 
 // ── Entity operations ────────────────────────────────────────────────────────
@@ -283,9 +289,9 @@ export function recordBelief(
   const sourceKeys = JSON.stringify([memoryKey]);
 
   db.prepare(
-    `INSERT INTO world_beliefs (belief_id, entity_id, content, status, first_stated, last_stated, source_memory_keys)
-     VALUES (?, ?, ?, 'active', ?, ?, ?)`
-  ).run(beliefId, entityId, content.trim(), timestamp, timestamp, sourceKeys);
+    `INSERT INTO world_beliefs (belief_id, entity_id, content, status, first_stated, last_stated, source_memory_keys, valid_from, valid_to)
+     VALUES (?, ?, ?, 'active', ?, ?, ?, ?, NULL)`
+  ).run(beliefId, entityId, content.trim(), timestamp, timestamp, sourceKeys, timestamp);
 
   return {
     beliefId,
@@ -295,6 +301,8 @@ export function recordBelief(
     firstStated: timestamp,
     lastStated: timestamp,
     sourceMemoryKeys: sourceKeys,
+    validFrom: timestamp,
+    validTo: null,
   };
 }
 
@@ -316,6 +324,46 @@ export function listBeliefs(status?: BeliefStatus): WorldBelief[] {
     firstStated: row.first_stated,
     lastStated: row.last_stated,
     sourceMemoryKeys: row.source_memory_keys,
+    validFrom: row.valid_from ?? null,
+    validTo: row.valid_to ?? null,
+  }));
+}
+
+export function reviseBelief(
+  beliefId: string,
+  newContent: string,
+  memoryKey: string,
+  timestamp: string
+): WorldBelief {
+  const db = getWorldDb();
+  db.prepare(
+    `UPDATE world_beliefs SET status = 'revised', valid_to = ? WHERE belief_id = ?`
+  ).run(timestamp, beliefId);
+  const old = db.prepare(
+    `SELECT entity_id FROM world_beliefs WHERE belief_id = ?`
+  ).get<{ entity_id: string | null }>(beliefId);
+  return recordBelief(newContent, old?.entity_id ?? null, memoryKey, timestamp);
+}
+
+export function beliefsAsOfDate(date: string): WorldBelief[] {
+  const db = getWorldDb();
+  const rows = db.prepare(
+    `SELECT * FROM world_beliefs
+     WHERE (valid_from IS NULL OR valid_from <= ?)
+       AND (valid_to IS NULL OR valid_to > ?)
+       AND status != 'contradicted'
+     ORDER BY last_stated DESC`
+  ).all<any>(date, date);
+  return rows.map((row) => ({
+    beliefId: row.belief_id,
+    entityId: row.entity_id,
+    content: row.content,
+    status: row.status,
+    firstStated: row.first_stated,
+    lastStated: row.last_stated,
+    sourceMemoryKeys: row.source_memory_keys,
+    validFrom: row.valid_from ?? null,
+    validTo: row.valid_to ?? null,
   }));
 }
 

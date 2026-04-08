@@ -1,4 +1,4 @@
-# Cecil v2.0
+# Cecil v2.1
 
 A personal assistant that remembers.
 
@@ -72,6 +72,7 @@ cecil.reflect(sections?)          // Run reflection agent
 cecil.maintenance(options?)       // Run memory hygiene
 cecil.worldModel.entities(kind?)  // List tracked entities
 cecil.worldModel.beliefs(status?) // List beliefs
+cecil.worldModel.beliefsAsOf(date) // Beliefs valid at a point in time
 cecil.worldModel.openLoops()      // List open loops
 cecil.worldModel.contradictions() // List contradictions
 ```
@@ -123,19 +124,21 @@ Run `npm run dev` and hit the endpoints:
 Every conversation flows through three layers:
 
 1. **Chat** — Cecil responds using its accumulated memory as context
-2. **Observe** — After each session, the observer extracts entities, beliefs, open loops, and contradictions into a structured world model
+2. **Observe** — After each session, the observer extracts entities, beliefs, open loops, and contradictions into a structured world model. Conversations are embedded at three granularities: full session, individual user messages, and Q+A exchange pairs.
 3. **Synthesize** — Every few sessions, an LLM pass detects patterns, updates the narrative, and computes drift
 
 Memory is stored in two systems simultaneously:
 - **Qdrant** for semantic search (finding similar memories)
 - **SQLite** for structured state (knowing what it knows, where it came from, and what changed)
 
+Every memory is auto-tagged with a **domain** (technology, business, personal, creative, health, education, finance, entertainment, or general). Domain-matched results get a scoring boost during retrieval — no relevant memories are filtered out, but topically aligned ones surface higher.
+
 ## What Cecil tracks
 
 Cecil builds a **world model** from every conversation:
 
 - **Entities** — people, projects, organizations, places, topics
-- **Beliefs** — opinions, values, preferences you express
+- **Beliefs** — opinions, values, preferences you express (with temporal validity — Cecil knows when a belief was active and when it was revised)
 - **Open loops** — things you said you'd do but haven't followed up on
 - **Contradictions** — conflicting statements across conversations
 - **Patterns** — recurring themes detected by the observer
@@ -151,6 +154,7 @@ npm run reflect                    # Reflection report
 npm run reflect -- --contradictions # Just contradictions
 npm run maintenance -- --dry-run   # Memory hygiene preview
 npm run maintenance                # Run dedup, quality sweep, stale detection
+npm run maintenance -- --semantic-dedup  # Run only semantic dedup
 npm run mcp                        # MCP tool server
 npm run world-model                # World model summary
 npm run world-model -- --rebuild   # Rebuild world model from memories

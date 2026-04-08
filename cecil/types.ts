@@ -6,6 +6,17 @@ export type MemoryType =
   | "podcast"
   | "fact";
 
+export type MemoryDomain =
+  | "technology"
+  | "business"
+  | "personal"
+  | "creative"
+  | "health"
+  | "education"
+  | "finance"
+  | "entertainment"
+  | "general";
+
 export type MemorySourceType =
   | "onboarding"
   | "conversation_session"
@@ -25,6 +36,7 @@ export interface MemoryMetadata {
   sourceEpisode?: string;
   entities?: string[];
   category?: string;
+  domain?: string;
   qualityScore?: number;
   provenance?: Record<string, unknown>;
 }

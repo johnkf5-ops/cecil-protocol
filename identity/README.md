@@ -2,7 +2,7 @@
 
 This directory holds Cecil's identity documents. All files here are **runtime data** — they are gitignored and never committed.
 
-Cecil v2 works without any of these files. It learns from conversation and builds understanding through the world model. If a seed exists, it's used as the strongest identity baseline.
+Cecil works without any of these files. It learns from conversation and builds understanding through the world model. If a seed exists, it's used as the strongest identity baseline.
 
 | File | Purpose | Created by |
 |------|---------|------------|

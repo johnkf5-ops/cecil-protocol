@@ -9,6 +9,7 @@
 import { chatCompletion } from "./llm";
 import { embed, getQdrantClient, COLLECTION_NAME, embedText } from "./embedder";
 import { recordMemoryWrite } from "./memory-store";
+import { detectDomain } from "./domain";
 import type { Message } from "./types";
 
 const MAX_TOKENS = 500;
@@ -83,6 +84,8 @@ export async function handleCorrections(
 
   for (const fact of detection.facts) {
     try {
+      const domain = detectDomain(fact.text);
+
       // Embed the corrected fact with high priority
       const pointId = await embed(fact.text, {
         type: "fact",
@@ -94,6 +97,7 @@ export async function handleCorrections(
           ? fact.entities
           : [subjectName, ...fact.entities],
         category: fact.category,
+        domain,
         qualityScore: 0.98,
         provenance: {
           writer: "correction-handler",
@@ -114,6 +118,7 @@ export async function handleCorrections(
         sessionId,
         sourceType: "direct_correction",
         sourceId: `correction:${sessionId}:${embedded}`,
+        domain,
         qualityScore: 0.98,
         provenance: {
           writer: "correction-handler",
